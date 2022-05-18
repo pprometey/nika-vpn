@@ -54,7 +54,7 @@ first_run() {
     sudo apt install -y unattended-upgrades
 
     # Configure unattended-upgrades
-    sudo dpkg-reconfigure -u --priority=low unattended-upgrades
+    sudo dpkg-reconfigure -pmedium unattended-upgrades
 
     echo
     echo "----- Install dependencies ----- "
@@ -85,11 +85,15 @@ first_run() {
     ## Install the latest version of Docker CE
     sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
+    sudo usermod -aG docker $SUDO_USER
+
+    newgrp docker 
+
     create_restore_file
 }
 
 get_wireguard_private_key() {
-    wireguard_privae_key="$(docker run -it --rm ghcr.io/freifunkmuc/wg-access-server wg genkey)"
+    wireguard_private_key=$(docker run -it --rm ghcr.io/freifunkmuc/wg-access-server wg genkey)
 }
 
 default_time_zone="Etc/UTC";
@@ -147,7 +151,7 @@ get_wireguard_admin_password(){
     echo
     echo "Enter the administrator password of the wg-access-server"
     read -p "Administrator password [randomly generated if empty]: " wireguard_admin_password
-    [[ -z "$wireguard_admin_password" ]] && wireguard_admin_password==$(tr -cd '[:alnum:]' < /dev/urandom | fold -w30 | head -n1) \
+    [[ -z "$wireguard_admin_password" ]] && wireguard_admin_password=$(tr -cd '[:alnum:]' < /dev/urandom | fold -w30 | head -n1) \
         && echo "The administrator password is: $wireguard_admin_password"  
 }
 
@@ -329,7 +333,7 @@ PI_HOLE_LOCAL_IP=$pihole_local_ip
 PI_HOLE_PASSWORD=$pihole_password
 
 # wireguard varitables
-WG_WIREGUARD_PRIVATE_KEY=$wireguard_privae_key
+WG_WIREGUARD_PRIVATE_KEY=$wireguard_private_key
 WG_WIREGUARD_PORT=$wireguard_port
 WG_VPN_CIDR=$wireguard_clients_subnet
 WG_ADMIN_USERNAME=$wireguard_admin_name
@@ -347,7 +351,6 @@ EOF
 }
 
 print_result() {
-clear
 cat << EOF > $result_file
 ****************************************************************
 To create users and connect to VPN, go to the VPN server
