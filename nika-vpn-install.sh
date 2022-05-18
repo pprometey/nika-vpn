@@ -85,10 +85,6 @@ first_run() {
     ## Install the latest version of Docker CE
     sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-    sudo usermod -aG docker $SUDO_USER
-
-    newgrp docker 
-
     create_restore_file
 }
 
