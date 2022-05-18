@@ -21,7 +21,12 @@ Run the script and follow the assistant:
 
 Once it ends, you need to go to [server_public_ip_address:vpn_control_panel_port] to create VPN users.
 
+
 ### Screenshots
+
+### Installation completion screen
+
+![Installation completion screen](content/finish_install.png "Installation completion screen")
 
 #### Wireguard Access Portal
 
@@ -31,9 +36,9 @@ Once it ends, you need to go to [server_public_ip_address:vpn_control_panel_port
 
 ![Pi-hole dashboard](content/pi-hole.png "Pi-hole dashboard")
 
-
 ### Health check
 
 To check the correct installation and operation of Nika-VPN, use the services:
-- DNS leak test - [dnsleak.com](https://dnsleak.com/) or [dnsleaktest.com](https://www.dnsleaktest.com/) or [ipleak.net](https://ipleak.net/)
-- Сheck ad blocking - [https://canyoublockit.com](https://canyoublockit.com)
+
+- DNS leak test - [dnsleak.com](https://dnsleak.com/) or [ipleak.net](https://ipleak.net/)
+- Сheck ad blocking - [canyoublockit.com](https://canyoublockit.com)
