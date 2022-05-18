@@ -382,7 +382,8 @@ general_post_installation() {
     
     docker compose up -d
     docker compose ps
-
+    
+    echo
     print_result
     read -n1 -r -p "Press any key to continue..."
     echo

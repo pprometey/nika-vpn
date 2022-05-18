@@ -17,7 +17,7 @@ I also want to express gratitude to the project [Nyr/wireguard-install](https://
 
 Run the script and follow the assistant:
 
-`wget https://bit.ly/nika-vpn-install -O nika-vpn-install.sh && sudo bash nika-vpn-install.sh`
+`screen -t "nika-vpn" bash -c 'wget https://bit.ly/nika-vpn-install -O nika-vpn-install.sh && sudo bash nika-vpn-install.sh; exec bash'`
 
 Once it ends, you need to go to [server_public_ip_address:vpn_control_panel_port] to create VPN users.
 
