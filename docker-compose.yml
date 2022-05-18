@@ -1,0 +1,95 @@
+version: "3.9"
+networks:
+  private_network:
+    ipam:
+      driver: default
+      config:
+        - subnet: ${LOCAL_SUBNET:-10.254.254.0/24}
+
+volumes:
+  wg-access-server-data:
+    driver: local
+  wg-access-clien-data:
+    driver: local
+  etc-pihole-data:
+    driver: local
+  etc-dnsmasq-data:
+    driver: local
+      
+services:
+  unbound:
+    image: "klutchell/unbound:latest"
+    container_name: unbound
+    restart: unless-stopped
+    hostname: "unbound"
+    environment:
+      - TZ=${TZ:-Etc/Utc}
+    volumes:
+      - "./unbound:/opt/unbound/etc/unbound"
+    networks:
+      private_network:
+        ipv4_address: ${UNBOUND_LOCAL_IP:-10.254.254.254}
+
+  pihole:
+    depends_on: [unbound]
+    container_name: pihole
+    image: pihole/pihole:latest
+    restart: unless-stopped
+    hostname: pihole
+    dns:
+      - 127.0.0.1
+      - ${UNBOUND_LOCAL_IP:-10.254.254.254} # Points to unbound
+    environment:
+      TZ: ${TZ:-Etc/Utc}
+      WEBPASSWORD: ${PI_HOLE_PASSWORD} # Blank password - Can be whatever you want.
+      ServerIP: ${PI_HOLE_LOCAL_IP:-10.254.254.253} # Internal IP of pihole
+      DNS1: ${UNBOUND_LOCAL_IP:-10.254.254.254} # Unbound IP
+      DNS2: ${UNBOUND_LOCAL_IP:-10.254.254.254} # If we don't specify two, it will auto pick google.
+    volumes:
+      - etc-pihole-data:/etc/pihole/
+      - etc-dnsmasq-data:/etc/dnsmasq.d/
+    cap_add:
+      - NET_ADMIN
+    networks:
+      private_network:
+        ipv4_address: ${PI_HOLE_LOCAL_IP:-10.254.254.253}
+
+  wg-access-server:
+    depends_on: [unbound, pihole]
+    image: ghcr.io/freifunkmuc/wg-access-server:latest
+    container_name: wg-access-server
+    hostname: wg-access-server
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - wg-access-server-data:/data
+      - wg-access-clien-data:/wireguard-clients
+      - /lib/modules:/lib/modules:ro
+    environment:
+      TZ: ${TZ:-Etc/Utc}
+      WG_WIREGUARD_PRIVATE_KEY: ${WG_WIREGUARD_PRIVATE_KEY:?set the WG_WIREGUARD_PRIVATE_KEY environment variable}
+      WG_WIREGUARD_PORT: ${WG_WIREGUARD_PORT:-51820}
+      WG_ADMIN_USERNAME: ${WG_ADMIN_USERNAME:-admin@vpn}
+      WG_ADMIN_PASSWORD: ${WG_ADMIN_PASSWORD:?set the WG_ADMIN_PASSWORD environment variable}
+      WG_VPN_CIDR: ${WG_VPN_CIDR:-10.254.253.0/24}
+      WG_LOG_LEVEL: ${WG_LOG_LEVEL:-info}
+      WG_PORT: ${WG_PORT:-8000}
+      WG_VPN_CLIENT_ISOLATION: fase
+      WG_VPN_ALLOWED_IPS: ${WG_VPN_ALLOWED_IPS:-0.0.0.0/0,::/0}
+      WG_DNS_UPSTREAM: ${PI_HOLE_LOCAL_IP:-10.254.254.253}
+      WG_DNS_ENABLED: ${WG_DNS_ENABLED:-true}
+      WG_IPV4_NAT_ENABLED: ${WG_IPV4_NAT_ENABLED:-true}
+      WG_IPV6_NAT_ENABLED: ${WG_IPV6_NAT_ENABLED:-false}
+      WG_VPN_CIDRV6: ${WG_VPN_CIDRV6:-0}
+    ports:
+      - "${WG_PORT:-8000}:${WG_PORT:-8000}/tcp"
+      - "${WG_WIREGUARD_PORT:-51820}:${WG_WIREGUARD_PORT:-51820}/udp"
+    devices:
+      - "/dev/net/tun:/dev/net/tun"
+    restart: unless-stopped
+    networks:
+      private_network:
+        ipv4_address: ${WG_LOCAL_IP:-10.254.254.252}
+    dns:
+      - ${PI_HOLE_LOCAL_IP:-10.254.254.253} # Points to pihole
+      - ${UNBOUND_LOCAL_IP:-10.254.254.254} # Points to unbound
