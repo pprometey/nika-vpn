@@ -1,4 +1,4 @@
-## Nika-VPN
+# Nika-VPN
 
 It is an easy to deploy and use private VPN server with ad blocker.
 
@@ -14,7 +14,7 @@ This VPN service has been developed and tesed for Oracle Cloud Free Tier on conf
 - Canonical-Ubuntu-20.04-Minimal, VM.Standard.E2.1.Micro (amd64)
 - Canonical-Ubuntu-20.04, VM.Standard.A1.Flex (aarch64)
 
-### Installation
+## Installation
 
 Run the script and follow the assistant:
 
@@ -22,28 +22,26 @@ Run the script and follow the assistant:
 
 Once it ends, you need to go to [server_public_ip_address:vpn_control_panel_port] to create VPN users.
 
-
-### Screenshots
+## Screenshots
 
 ### Installation completion screen
 
 ![Installation completion screen](content/finish_install.png "Installation completion screen")
 
-#### Wireguard Access Portal
+### Wireguard Access Portal
 
 ![Wireguard Access Porta](content/wg-access-server.png "Wireguard Access Porta")
 
-#### Pi-hole dashboard
+### Pi-hole dashboard
 
 ![Pi-hole dashboard](content/pi-hole.png "Pi-hole dashboard")
 
-### Health check
+## Health check
 
 To check the correct installation and operation of Nika-VPN, use the services:
 
 - DNS leak test - [dnsleak.com](https://dnsleak.com/) or [ipleak.net](https://ipleak.net/)
 - Сheck ad blocking - [canyoublockit.com](https://canyoublockit.com)
-
 
 ## Credits
 
