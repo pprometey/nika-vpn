@@ -22,7 +22,6 @@ QUIET="" # -q|--quiet
 NIKA_VPN_TEMP_DIR=
 
 IS_OPEN_PORTS="true" # -nop|--not-open-ports
-IS_AUTO_UPGRADE="true" # -aud|--auto-upgrade-disable
 
 TIME_ZONE="Etc/UTC" # -tz|--time-zone _
 SERVICES_SUBNET="10.43.0.0/24" # -ss|--services-subnet _
@@ -570,23 +569,7 @@ apt_update_packges_info() {
 
 apt_upgrade() {
   if ! sudocmd "upgrade OS" apt-get upgrade -y ${QUIET:+-qq}; then
-    die "\nUpdating package list failed.  Please run 'apt-get update' and try again."
-  fi
-}
-
-apt_auto_upgrade() {
-  if [ $IS_AUTO_UPGRADE = "true" ]; then
-    info "Enable auto upgrade OS..."
-    info ""
-    if  ! has_unattended_upgrades; then
-      apt_update_packges_info
-      apt_get_install_pkgs dialog
-      apt_upgrade
-      apt_get_install_pkgs unattended-upgrades
-    fi
-    if ! sudocmd "enable auto-upgrade OS" dpkg-reconfigure -pmedium unattended-upgrades; then
-      die "\nEnabling auto-upgrade OS failed.  Please run 'sudo dpkg-reconfigure -plow unattended-upgrades' and try again."
-    fi
+    die "\nUpdating package list failed.  Please run 'apt-get upgrade' and try again."
   fi
 }
 
@@ -601,7 +584,9 @@ apt_install_dependencies() {
       info "Installing dependencies..."
       info ""
       apt_update_packges_info
-      apt_get_install_pkgs ca-certificates curl gnupg lsb-release git unzip dialog
+      apt_get_install_pkgs dialog
+      apt_upgrade
+      apt_get_install_pkgs ca-certificates curl gnupg lsb-release git unzip
     fi
 }
 
@@ -1196,10 +1181,6 @@ while [ $# -gt 0 ]; do
       ;;
     -nop|--not-open-ports)
       IS_OPEN_PORTS="false"
-      shift
-      ;;
-    -aud|--auto-upgrade-disable)
-      IS_AUTO_UPGRADE="false"
       shift
       ;;
     *)
