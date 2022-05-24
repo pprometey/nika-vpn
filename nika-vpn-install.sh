@@ -85,7 +85,7 @@ generate_password() {
 }
 
 get_env_value() {
-    grep "${1}" ${2} | cut -d'=' -f2
+  grep "${1}" ${2} | cut -d'=' -f2
 }
 
 get_subnet_prefix() {
@@ -118,7 +118,7 @@ get_public_ip() {
       die "Neither wget nor curl is available, please install one to continue."
     fi
   fi
-  local public_ip=$(wget -T 10 -t 1 -4qO- "http://ip1.dynupdate.no-ip.com/" || \
+  public_ip=$(wget -T 10 -t 1 -4qO- "http://ip1.dynupdate.no-ip.com/" || \
     curl -m 10 -4Ls "http://ip1.dynupdate.no-ip.com/")
 
   if ! echo $public_ip | grep -m 1 -oE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'; then
@@ -801,7 +801,7 @@ run_services() {
 
     cd ${DEST}
     create_env_file
-    if sudocmd "run services" docker compose up -d; then
+    if sudocmd "run services" docker compose -f "${DEST}/docker-compose.yml" up -d ; then
       return 0
     else
       return 1
@@ -813,7 +813,7 @@ run_services() {
 
 print_result() {
   if [ -z "$QUIET" ] ; then
-  local nika_vpn_info_file=${NIKA_VPN_TEMP_DIR}/${NIKA_VPN_INFO_FILENAME}
+  nika_vpn_info_file=${NIKA_VPN_TEMP_DIR}/${NIKA_VPN_INFO_FILENAME}
 cat << EOF > $nika_vpn_info_file
 ****************************************************************
 To create users and connect to VPN, go to the VPN server
@@ -938,10 +938,11 @@ has_nika_vpn() {
     die "This script requires 'sudo' installed."
   fi
   if has_docker && is_docker_active; then
-      local dockerps=$(sudo docker ps)
-      if echo $dockerps | grep -q 'unbound'  || \
-         echo $dockerps | grep -q 'pihole'  || \
-         echo $dockerps | grep -q 'wg-access-server'; then
+      dockerlist=$(sudo docker ps)
+
+      if echo $dockerlist | grep -q 'unbound'  || \
+         echo $dockerlist | grep -q 'pihole'  || \
+         echo $dockerlist | grep -q 'wg-access-server'; then
         return 0
       else
         return 1
@@ -952,11 +953,35 @@ has_nika_vpn() {
 }
 
 get_nika_vpn_installed_path() {
-  local location=$(dirname $(sudo docker container inspect $1 --format '{{ index .Config.Labels "com.docker.compose.project.config_files" }}'))
+  location=$(dirname $(sudo docker container inspect $1 --format '{{ index .Config.Labels "com.docker.compose.project.config_files" }}'))
   if [ ! -d "$location" ]; then
     die "Error getting Nika-VPN installation path"
   fi
   echo $location
+}
+
+remove_old_installation() {
+  info "Removing old installation..."
+  location=$(get_nika_vpn_installed_path "wg-access-server")
+  # Close ports
+  nika_vpn_env_file="$location/$NIKA_VPN_ENV_FILENAME"
+
+  # Close ports
+  if [ -f $nika_vpn_env_file ]; then
+    vpn_port=$(get_env_value "WG_WIREGUARD_PORT" $nika_vpn_env_file)
+    admin_port=$(get_env_value "WG_PORT" $nika_vpn_env_file)
+    close_ports $vpn_port $admin_port
+  fi
+
+  # Remove running containers
+  if ! sudocmd "stop running docker service containers" docker compose -f "${location}/docker-compose.yml" down -v; then
+    die "n\Error removing old docker container, please remove them manually, run \n'sudo docker compose -f ${location}/docker-compose.yml down -v"
+  fi
+
+  # Remove installation folder
+ if ! sudocmd "remove old installation folder" rm -rf $location; then
+    die "\nError removing old installation folder, please remove it manually, run \n'rm -rf $location'"
+  fi
 }
 
 check_nika_vpn_installed() {
@@ -964,21 +989,11 @@ check_nika_vpn_installed() {
     info "Nika VPN is already installed."
 
     if [ "$FORCE" = "true" ] ; then
+      print_separator
       info "Forcing reinstallation."
-      local location=$(get_nika_vpn_installed_path "wg-access-server")
-      # Close ports
-      local nika_vpn_env_file="$location/$NIKA_VPN_ENV_FILENAME"
-      local vpn_port=get_env_value "WG_WIREGUARD_PORT" $nika_vpn_env_file
-      local admin_port=get_env_value "WG_PORT" $nika_vpn_env_file
-      close_ports $vpn_port $admin_port
-      # Remove running containers
-      cd $location
-      sudo docker compose down -v
-      cd $(get_run_path)
-      # Remove installation folder
-      sudo rm -rf $location
+      remove_old_installation
     else
-      die "Nika VPN is already installed. Run script with --force (or -f) option to reinstall."
+      die "Run script with --force (or -f) option to reinstall."
     fi
   else
     info "Nika VPN is not installed."
@@ -986,11 +1001,11 @@ check_nika_vpn_installed() {
 }
 
 validate_params() {
-  local subnet_prefix=$(get_subnet_prefix "$SERVICES_SUBNET")
-  local unbound_prefix=$(get_subnet_prefix "$UNBOUND_LOCAL_IP")
-  local pihole_prefix=$(get_subnet_prefix "$PI_HOLE_LOCAL_IP")
-  local wg_prefix=$(get_subnet_prefix "$WG_LOCAL_IP")
-  local wg_subnet_prefix=$(get_subnet_prefix "$WG_VPN_CIDR")
+  subnet_prefix=$(get_subnet_prefix "$SERVICES_SUBNET")
+  unbound_prefix=$(get_subnet_prefix "$UNBOUND_LOCAL_IP")
+  pihole_prefix=$(get_subnet_prefix "$PI_HOLE_LOCAL_IP")
+  wg_prefix=$(get_subnet_prefix "$WG_LOCAL_IP")
+  wg_subnet_prefix=$(get_subnet_prefix "$WG_VPN_CIDR")
 
   if [ "$subnet_prefix" != "$unbound_prefix" ]; then
     die "The specified local address ${UNBOUND_LOCAL_IP} does not belong to the specified network ${SERVICES_SUBNET}"
