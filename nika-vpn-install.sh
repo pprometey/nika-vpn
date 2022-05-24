@@ -726,7 +726,7 @@ is_docker_active() {
 apt_docker_install() {
   add_docker_repository() {
     add_docker_gpg_key() {
-      s[ !ave_docker_gpg_key() {
+      save_docker_gpg_key() {
         if ! sudocmd "add Docker’s official GPG key" gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg ; then
           die "\nAdding Docker’s official GPG key failed."
         fi
@@ -823,7 +823,7 @@ apt_install_dependencies() {
        ! has_gnupg  || \
        ! has_lsb_release  || \
        ! has_git  || \
-       ! has_unzip; then
+       ! has_unzip ; then
       info ""
       info "Installing dependencies..."
       info ""
