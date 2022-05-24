@@ -68,7 +68,7 @@ die() {
 # print a separator
 print_separator() {
   info ""
-  info "-------------------------------------------------------------------------------"
+  info "----------------------------------------------------------------"
   info ""
 }
 
@@ -578,10 +578,11 @@ apt_auto_upgrade() {
   if [ $IS_AUTO_UPGRADE = "true" ]; then
     info "Enable auto upgrade OS..."
     info ""
-    if  ! has_unattended_upgrades  ||  ! has_dialog; then
+    if  ! has_unattended_upgrades; then
       apt_update_packges_info
+      apt_get_install_pkgs dialog
       apt_upgrade
-      apt_get_install_pkgs dialog unattended-upgrades
+      apt_get_install_pkgs unattended-upgrades
     fi
     if ! sudocmd "enable auto-upgrade OS" dpkg-reconfigure -pmedium unattended-upgrades; then
       die "\nEnabling auto-upgrade OS failed.  Please run 'sudo dpkg-reconfigure -plow unattended-upgrades' and try again."
@@ -596,6 +597,7 @@ apt_install_dependencies() {
       [ ! has_lsb_release ] || \
       [ ! has_git ] || \
       [ ! has_unzip ]; then
+      info ""
       info "Installing dependencies..."
       info ""
       apt_update_packges_info
@@ -642,6 +644,7 @@ https://download.docker.com/linux/$(get_distro_name) $(lsb_release -cs) stable" 
   }
 
   if ! has_docker ; then
+    info ""
     info "Installing docker..."
     info ""
     add_docker_repository
@@ -675,12 +678,14 @@ apt_firewalld_install() {
 
   if [ $IS_OPEN_PORTS = "true" ]; then
     if ! has_firewalld; then
+      info ""
       info "Installing firewalld..."
       info ""
       apt_get_install_pkgs firewalld
     fi
 
     if ! is_enabled_firewalld; then
+      info ""
       info "Enabling firewalld..."
       info ""
       if ! sudocmd "enable firewalld" systemctl enable firewalld ${QUIET:+-q}; then
@@ -730,12 +735,18 @@ close_ports() {
   fi
 }
 
+set_blank_dest() {
+    [ "$DEST" = "" ] && DEST=$DEFAULT_DEST
+}
+
 apt_clone_repository() {
   if ! has_git ; then
     info "Installing git..."
     info ""
     apt_get_install_pkgs git
   fi
+
+  set_blank_dest
 
   if [ -d ${DEST} ]; then
     die "\nDestination folder is exist. Remove folder and try again. \n'rm -rf ${DEST}'"
@@ -749,7 +760,7 @@ apt_clone_repository() {
 }
 
 create_env_file() {
-
+  if [ -d ${DEST} ]; then
 cat << EOF > ${DEST}/${NIKA_VPN_ENV_FILENAME}
 TIME_ZONE=${TIME_ZONE}
 SERVICES_SUBNET=${SERVICES_SUBNET}
@@ -778,6 +789,7 @@ WG_DNS_DOMAIN=${WG_DNS_DOMAIN}
 WG_EXTERNAL_HOST=${WG_EXTERNAL_HOST}
 WG_VPN_CLIENT_ISOLATION=${WG_VPN_CLIENT_ISOLATION}
 EOF
+fi
 }
 
 
@@ -788,8 +800,8 @@ get_wireguard_private_key() {
   sudo docker run -it --rm ghcr.io/freifunkmuc/wg-access-server wg genkey
 }
 
+
 set_blank_params() {
-    [ "$DEST" = "" ] && DEST=$DEFAULT_DEST
     [ "$WG_WIREGUARD_PRIVATE_KEY" = "" ] && WG_WIREGUARD_PRIVATE_KEY=$(get_wireguard_private_key)
     [ "$WG_ADMIN_PASSWORD" = "" ] && WG_ADMIN_PASSWORD=$(generate_password)
 }
@@ -798,8 +810,7 @@ run_services() {
   if [ -d ${DEST} ]; then
     info "Running services..."
     info ""
-
-    cd ${DEST}
+    set_blank_params
     create_env_file
     if sudocmd "run services" docker compose -f "${DEST}/docker-compose.yml" up -d ; then
       return 0
@@ -849,10 +860,10 @@ do_ubuntu_install() {
     print_separator
     install_dependencies
     print_separator
-    set_blank_params
     apt_clone_repository
     print_separator
     run_services
+    print_separator
     open_ports $WG_WIREGUARD_PORT $WG_PORT
     print_separator
     print_result
@@ -885,7 +896,6 @@ GETDISTRO
 
   if [ -n "$DISTRO" ] ; then
     info "Detected Linux distribution: $DISTRO"
-    info ""
   fi
 
   case "$DISTRO" in
@@ -932,17 +942,12 @@ do_os() {
   esac
 }
 
-
 has_nika_vpn() {
   if ! has_sudo; then
     die "This script requires 'sudo' installed."
   fi
   if has_docker && is_docker_active; then
-      dockerlist=$(sudo docker ps)
-
-      if echo $dockerlist | grep -q 'unbound'  || \
-         echo $dockerlist | grep -q 'pihole'  || \
-         echo $dockerlist | grep -q 'wg-access-server'; then
+      if sudocmd "get a list of running docker containers" docker ps | grep -q 'wg-access-server'; then
         return 0
       else
         return 1
