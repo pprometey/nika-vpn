@@ -560,34 +560,155 @@ get_distro_name() {
 
 # -------------------------------------------------------------------------------
 
+print_result() {
+  if [ -z "$QUIET" ] ; then
+  nika_vpn_info_file=${NIKA_VPN_TEMP_DIR}/${NIKA_VPN_INFO_FILENAME}
+cat << EOF > $nika_vpn_info_file
+****************************************************************
+To create users and connect to VPN, go to the VPN server
+administration panel at:
+
+VPN control panel address: $(get_public_ip):$WG_PORT
+Login: $WG_ADMIN_USERNAME
+Password: $WG_ADMIN_PASSWORD
+
+----------------------------------------------------------------
+
+To manage the Pi-hole ad blocker, after connecting via VPN,
+go to the administration panel at:
+Pi-hole dashboard: http://$PI_HOLE_LOCAL_IP/admin
+Password: $PI_HOLE_PASSWORD
+
+****************************************************************
+EOF
+
+cat $nika_vpn_info_file
+  fi
+}
+
+open_ports() {
+  if [ $IS_OPEN_PORTS = "true" ]; then
+
+    if ! sudocmd "open udp port $1" firewall-cmd --permanent --zone=public --add-port=$1/udp ${QUIET:+-q}; then
+      die "\nOpening port failed. Please run 'sudo firewall-cmd --permanent --zone=public --add-port=$1/udp' and try again."
+    fi
+
+    if ! sudocmd "open tcp port $2" firewall-cmd --permanent --zone=public --add-port=$2/tcp ${QUIET:+-q}; then
+      die "\nOpening port failed. Please run 'sudo firewall-cmd --permanent --zone=public --add-port=$2/tcp' and try again."
+    fi
+
+    if ! sudocmd "restart firewall" firewall-cmd --reload ${QUIET:+-q}; then
+      die "\nRestarting firewall failed. Please run 'sudo firewall-cmd --reload' and try again."
+    fi
+  fi
+}
+
+close_ports() {
+  if ! sudocmd "close udp port $1" firewall-cmd --permanent --zone=public --remove-port=$1/udp ${QUIET:+-q}; then
+    die "\nClosing port failed. Please run 'sudo firewall-cmd --permanent --zone=public --add-port=$1/udp' and try again."
+  fi
+
+  if ! sudocmd "close tcp port $2" firewall-cmd --permanent --zone=public --remove-port=$2/tcp ${QUIET:+-q}; then
+    die "\nClosing port failed. Please run 'sudo firewall-cmd --permanent --zone=public --add-port=$2/tcp' and try again."
+  fi
+
+  if ! sudocmd "restart firewall" firewall-cmd --reload ${QUIET:+-q}; then
+    die "\nRestarting firewall failed. Please run 'sudo firewall-cmd --reload' and try again."
+  fi
+}
+
+set_blank_dest() {
+    [ "$DEST" = "" ] && DEST=$DEFAULT_DEST
+}
+
+
+apt_clone_repository() {
+  if ! has_git ; then
+    info "Installing git..."
+    info ""
+    apt_get_install_pkgs git
+  fi
+
+  set_blank_dest
+
+  if [ -d ${DEST} ]; then
+    die "\nDestination folder is exist. Remove folder and try again. \n'rm -rf ${DEST}'"
+  fi
+
+  info "Cloning repository..."
+  info ""
+  if ! git clone ${REPO_URL} ${DEST} ${QUIET:+-q}; then
+    die "\nCloning repository failed. "
+  fi
+}
+
+create_env_file() {
+  if [ -d ${DEST} ]; then
+cat << EOF > ${DEST}/${NIKA_VPN_ENV_FILENAME}
+TIME_ZONE=${TIME_ZONE}
+SERVICES_SUBNET=${SERVICES_SUBNET}
+UNBOUND_LOCAL_IP=${UNBOUND_LOCAL_IP}
+PI_HOLE_LOCAL_IP=${PI_HOLE_LOCAL_IP}
+PI_HOLE_PASSWORD=${PI_HOLE_PASSWORD}
+WG_LOCAL_IP=${WG_LOCAL_IP}
+WG_WIREGUARD_PRIVATE_KEY=${WG_WIREGUARD_PRIVATE_KEY}
+WG_ADMIN_USERNAME=${WG_ADMIN_USERNAME}
+WG_ADMIN_PASSWORD=${WG_ADMIN_PASSWORD}
+WG_WIREGUARD_PORT=${WG_WIREGUARD_PORT}
+WG_PORT=${WG_PORT}
+WG_LOG_LEVEL=${WG_LOG_LEVEL}
+WG_STORAGE=${WG_STORAGE}
+WG_DISABLE_METADATA=${WG_DISABLE_METADATA}
+WG_FILENAME=${WG_FILENAME}
+WG_WIREGUARD_INTERFACE=${WG_WIREGUARD_INTERFACE}
+WG_VPN_CIDR=${WG_VPN_CIDR}
+WG_VPN_CIDRV6=${WG_VPN_CIDRV6}
+WG_IPV4_NAT_ENABLED=${WG_IPV4_NAT_ENABLED}
+WG_IPV6_NAT_ENABLED=${WG_IPV6_NAT_ENABLED}
+WG_VPN_ALLOWED_IPS=${WG_VPN_ALLOWED_IPS}
+WG_DNS_ENABLED=${WG_DNS_ENABLED}
+WG_DNS_UPSTREAM=${PI_HOLE_LOCAL_IP}
+WG_DNS_DOMAIN=${WG_DNS_DOMAIN}
+WG_EXTERNAL_HOST=${WG_EXTERNAL_HOST}
+WG_VPN_CLIENT_ISOLATION=${WG_VPN_CLIENT_ISOLATION}
+EOF
+fi
+}
+
+get_wireguard_private_key() {
+  if ! has_docker ; then
+    die "Docker is not installed. Please install Docker and try again."
+  fi
+  sudo docker run --rm ghcr.io/freifunkmuc/wg-access-server wg genkey
+}
+
+
+set_blank_params() {
+    [ "$WG_WIREGUARD_PRIVATE_KEY" = "" ] && WG_WIREGUARD_PRIVATE_KEY=$(get_wireguard_private_key)
+    [ "$WG_ADMIN_PASSWORD" = "" ] && WG_ADMIN_PASSWORD=$(generate_password)
+}
+
+run_services() {
+  if [ -d ${DEST} ]; then
+    info "Running services..."
+    info ""
+    set_blank_params
+    create_env_file
+    if sudocmd "run services" docker compose -f "${DEST}/docker-compose.yml" up -d ; then
+      return 0
+    else
+      return 1
+    fi
+  else
+    return 1
+  fi
+}
+
 # Download packages information from all configured sources
 apt_update_packges_info() {
   if ! sudocmd "update packages list" apt-get update -y ${QUIET:+-qq}; then
     die "\nUpdating package list failed.  Please run 'apt-get update' and try again."
   fi
-}
-
-apt_upgrade() {
-  if ! sudocmd "upgrade OS" apt-get upgrade -y ${QUIET:+-qq}; then
-    die "\nUpdating package list failed.  Please run 'apt-get upgrade' and try again."
-  fi
-}
-
-# Install dependencies for distros that use Apt
-apt_install_dependencies() {
-    if [ ! has_curl ] || \
-      [ ! has_gnupg ] || \
-      [ ! has_lsb_release ] || \
-      [ ! has_git ] || \
-      [ ! has_unzip ]; then
-      info ""
-      info "Installing dependencies..."
-      info ""
-      apt_update_packges_info
-      apt_get_install_pkgs dialog
-      apt_upgrade
-      apt_get_install_pkgs ca-certificates curl gnupg lsb-release git unzip
-    fi
 }
 
 is_docker_active() {
@@ -605,7 +726,7 @@ is_docker_active() {
 apt_docker_install() {
   add_docker_repository() {
     add_docker_gpg_key() {
-      save_docker_gpg_key() {
+      s[ !ave_docker_gpg_key() {
         if ! sudocmd "add Docker’s official GPG key" gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg ; then
           die "\nAdding Docker’s official GPG key failed."
         fi
@@ -666,6 +787,7 @@ apt_firewalld_install() {
       info ""
       info "Installing firewalld..."
       info ""
+      apt_update_packges_info
       apt_get_install_pkgs firewalld
     fi
 
@@ -689,148 +811,27 @@ apt_firewalld_install() {
   fi
 }
 
-open_ports() {
-  if [ $IS_OPEN_PORTS = "true" ]; then
+apt_upgrade() {
+  if ! sudocmd "upgrade OS" apt-get upgrade -y ${QUIET:+-qq}; then
+    die "\nUpdating package list failed.  Please run 'apt-get upgrade' and try again."
+  fi
+}
 
-    if ! sudocmd "open udp port $1" firewall-cmd --permanent --zone=public --add-port=$1/udp ${QUIET:+-q}; then
-      die "\nOpening port failed. Please run 'sudo firewall-cmd --permanent --zone=public --add-port=$1/udp' and try again."
+# Install dependencies for distros that use Apt
+apt_install_dependencies() {
+    if ! has_curl  || \
+       ! has_gnupg  || \
+       ! has_lsb_release  || \
+       ! has_git  || \
+       ! has_unzip; then
+      info ""
+      info "Installing dependencies..."
+      info ""
+      apt_update_packges_info
+      apt_get_install_pkgs dialog
+      apt_upgrade
+      apt_get_install_pkgs ca-certificates curl gnupg lsb-release git unzip
     fi
-
-    if ! sudocmd "open tcp port $2" firewall-cmd --permanent --zone=public --add-port=$2/tcp ${QUIET:+-q}; then
-      die "\nOpening port failed. Please run 'sudo firewall-cmd --permanent --zone=public --add-port=$2/tcp' and try again."
-    fi
-
-    if ! sudocmd "restart firewall" firewall-cmd --reload ${QUIET:+-q}; then
-      die "\nRestarting firewall failed. Please run 'sudo firewall-cmd --reload' and try again."
-    fi
-  fi
-}
-
-close_ports() {
-  if ! sudocmd "close udp port $1" firewall-cmd --permanent --zone=public --remove-port=$1/udp ${QUIET:+-q}; then
-    die "\nClosing port failed. Please run 'sudo firewall-cmd --permanent --zone=public --add-port=$1/udp' and try again."
-  fi
-
-  if ! sudocmd "close tcp port $2" firewall-cmd --permanent --zone=public --remove-port=$2/tcp ${QUIET:+-q}; then
-    die "\nClosing port failed. Please run 'sudo firewall-cmd --permanent --zone=public --add-port=$2/tcp' and try again."
-  fi
-
-  if ! sudocmd "restart firewall" firewall-cmd --reload ${QUIET:+-q}; then
-    die "\nRestarting firewall failed. Please run 'sudo firewall-cmd --reload' and try again."
-  fi
-}
-
-set_blank_dest() {
-    [ "$DEST" = "" ] && DEST=$DEFAULT_DEST
-}
-
-apt_clone_repository() {
-  if ! has_git ; then
-    info "Installing git..."
-    info ""
-    apt_get_install_pkgs git
-  fi
-
-  set_blank_dest
-
-  if [ -d ${DEST} ]; then
-    die "\nDestination folder is exist. Remove folder and try again. \n'rm -rf ${DEST}'"
-  fi
-
-  info "Cloning repository..."
-  info ""
-  if ! git clone ${REPO_URL} ${DEST} ${QUIET:+-q}; then
-    die "\nCloning repository failed. "
-  fi
-}
-
-create_env_file() {
-  if [ -d ${DEST} ]; then
-cat << EOF > ${DEST}/${NIKA_VPN_ENV_FILENAME}
-TIME_ZONE=${TIME_ZONE}
-SERVICES_SUBNET=${SERVICES_SUBNET}
-UNBOUND_LOCAL_IP=${UNBOUND_LOCAL_IP}
-PI_HOLE_LOCAL_IP=${PI_HOLE_LOCAL_IP}
-PI_HOLE_PASSWORD=${PI_HOLE_PASSWORD}
-WG_LOCAL_IP=${WG_LOCAL_IP}
-WG_WIREGUARD_PRIVATE_KEY=${WG_WIREGUARD_PRIVATE_KEY}
-WG_ADMIN_USERNAME=${WG_ADMIN_USERNAME}
-WG_ADMIN_PASSWORD=${WG_ADMIN_PASSWORD}
-WG_WIREGUARD_PORT=${WG_WIREGUARD_PORT}
-WG_PORT=${WG_PORT}
-WG_LOG_LEVEL=${WG_LOG_LEVEL}
-WG_STORAGE=${WG_STORAGE}
-WG_DISABLE_METADATA=${WG_DISABLE_METADATA}
-WG_FILENAME=${WG_FILENAME}
-WG_WIREGUARD_INTERFACE=${WG_WIREGUARD_INTERFACE}
-WG_VPN_CIDR=${WG_VPN_CIDR}
-WG_VPN_CIDRV6=${WG_VPN_CIDRV6}
-WG_IPV4_NAT_ENABLED=${WG_IPV4_NAT_ENABLED}
-WG_IPV6_NAT_ENABLED=${WG_IPV6_NAT_ENABLED}
-WG_VPN_ALLOWED_IPS=${WG_VPN_ALLOWED_IPS}
-WG_DNS_ENABLED=${WG_DNS_ENABLED}
-WG_DNS_UPSTREAM=${PI_HOLE_LOCAL_IP}
-WG_DNS_DOMAIN=${WG_DNS_DOMAIN}
-WG_EXTERNAL_HOST=${WG_EXTERNAL_HOST}
-WG_VPN_CLIENT_ISOLATION=${WG_VPN_CLIENT_ISOLATION}
-EOF
-fi
-}
-
-
-get_wireguard_private_key() {
-  if ! has_docker ; then
-    die "Docker is not installed. Please install Docker and try again."
-  fi
-  sudo docker run --rm ghcr.io/freifunkmuc/wg-access-server wg genkey
-}
-
-
-set_blank_params() {
-    [ "$WG_WIREGUARD_PRIVATE_KEY" = "" ] && WG_WIREGUARD_PRIVATE_KEY=$(get_wireguard_private_key)
-    [ "$WG_ADMIN_PASSWORD" = "" ] && WG_ADMIN_PASSWORD=$(generate_password)
-}
-
-run_services() {
-  if [ -d ${DEST} ]; then
-    info "Running services..."
-    info ""
-    set_blank_params
-    create_env_file
-    if sudocmd "run services" docker compose -f "${DEST}/docker-compose.yml" up -d ; then
-      return 0
-    else
-      return 1
-    fi
-  else
-    return 1
-  fi
-}
-
-print_result() {
-  if [ -z "$QUIET" ] ; then
-  nika_vpn_info_file=${NIKA_VPN_TEMP_DIR}/${NIKA_VPN_INFO_FILENAME}
-cat << EOF > $nika_vpn_info_file
-****************************************************************
-To create users and connect to VPN, go to the VPN server
-administration panel at:
-
-VPN control panel address: $(get_public_ip):$WG_PORT
-Login: $WG_ADMIN_USERNAME
-Password: $WG_ADMIN_PASSWORD
-
-----------------------------------------------------------------
-
-To manage the Pi-hole ad blocker, after connecting via VPN,
-go to the administration panel at:
-Pi-hole dashboard: http://$PI_HOLE_LOCAL_IP/admin
-Password: $PI_HOLE_PASSWORD
-
-****************************************************************
-EOF
-
-cat $nika_vpn_info_file
-  fi
 }
 
 do_ubuntu_install() {
