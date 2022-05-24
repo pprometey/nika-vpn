@@ -9,6 +9,12 @@
 # or:
 #   'wget -qO- https://bit.ly/nika-vpn-install | sh'
 #
+# Arguments (use `... | sh -s - ARGUMENTS`)
+#
+# -q: reduce script's output
+# -f: force over-write even if 'nika-vpn' already installed
+# -d DESTDIR: change destination directory
+#
 # Copyright (c) 2018 Alexei Chernyavski. Released under the MIT License.priva
 
 REPO_URL="https://github.com/pprometey/nika-vpn.git"
@@ -694,7 +700,7 @@ run_services() {
     info ""
     set_blank_params
     create_env_file
-    if sudocmd "run services" docker compose -f "${DEST}/docker-compose.yml" up -d ; then
+    if sudocmd "run services" docker compose -f "${DEST}/docker-compose.yml" up -d ${QUIET:+--quiet-pull}; then
       return 0
     else
       return 1
@@ -983,7 +989,7 @@ check_nika_vpn_installed() {
       info "Forcing reinstallation."
       remove_old_installation
     else
-      die "Run script with --force (or -f) option to reinstall."
+      die "Run script with --force (or -f) option to reinstall. \n 'curl -sSL https://bit.ly/nika-vpn-install | sh -s - -f'"
     fi
   else
     info "Nika VPN is not installed."
