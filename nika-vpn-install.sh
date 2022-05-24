@@ -84,7 +84,7 @@ generate_password() {
   echo $(tr -cd '[:alnum:]' < /dev/urandom | fold -w30 | head -n1)
 }
 
-function get_env_value() {
+get_env_value() {
     grep "${1}" ${2} | cut -d'=' -f2
 }
 
@@ -118,8 +118,8 @@ get_public_ip() {
       die "Neither wget nor curl is available, please install one to continue."
     fi
   fi
-  local public_ip=$(wget -T 10 -t 1 -4qO- "http://ip1.dynupdate.no-ip.com/" \
-    || curl -m 10 -4Ls "http://ip1.dynupdate.no-ip.com/")
+  local public_ip=$(wget -T 10 -t 1 -4qO- "http://ip1.dynupdate.no-ip.com/" || \
+    curl -m 10 -4Ls "http://ip1.dynupdate.no-ip.com/")
 
   if ! echo $public_ip | grep -m 1 -oE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'; then
     die "Could not determine public IP address."
@@ -185,10 +185,6 @@ has_docker() {
   has_cmd docker
 }
 
-has_ca_certificates() {
-  has_cmd ca-certificates
-}
-
 has_gnupg() {
   has_cmd gnupg
 }
@@ -219,6 +215,10 @@ has_systemd_detect_virt() {
 
 has_unattended_upgrades() {
   has_cmd unattended-upgrades
+}
+
+has_dialog() {
+  has_cmd dialog
 }
 
 # -------------------------------------------------------------------------------
@@ -366,7 +366,7 @@ apt_get_install_pkgs() {
       missing="$missing $pkg"
     fi
   done
-  if [ "$missing" == "" ]; then
+  if [ "$missing" = "" ]; then
     info "Already installed!"
   elif ! sudocmd "install required system dependencies" apt-get install -y ${QUIET:+-qq}$missing; then
     die "\nInstalling apt packages failed.  Please run 'apt-get update' and try again."
@@ -512,7 +512,7 @@ distro_info() {
 
     TR_RELEASE="$(parse_release_id);$(parse_release_version)"
 
-    if [ ";" == "$TR_RELEASE" ] ; then
+    if [ ";" = "$TR_RELEASE" ] ; then
       if [ -e /etc/arch-release ] ; then
         # /etc/arch-release exists but is often empty
         echo "arch;"
@@ -575,15 +575,15 @@ apt_upgrade() {
 }
 
 apt_auto_upgrade() {
-  if [ ${IS_AUTO_UPGRADE} == true ]; then
+  if [ $IS_AUTO_UPGRADE = "true" ]; then
     info "Enable auto upgrade OS..."
     info ""
-    if ! has_unattended_upgrades; then
+    if  ! has_unattended_upgrades  ||  ! has_dialog; then
       apt_update_packges_info
       apt_upgrade
-      apt_get_install_pkgs unattended-upgrades
+      apt_get_install_pkgs unattended-upgrades dialog
     fi
-    if ! sudocmd "enable auto-upgrade OS" dpkg-reconfigure -plow unattended-upgrades; then
+    if ! sudocmd "enable auto-upgrade OS" dpkg-reconfigure -pmedium unattended-upgrades; then
       die "\nEnabling auto-upgrade OS failed.  Please run 'sudo dpkg-reconfigure -plow unattended-upgrades' and try again."
     fi
   fi
@@ -591,16 +591,15 @@ apt_auto_upgrade() {
 
 # Install dependencies for distros that use Apt
 apt_install_dependencies() {
-    if ! has_ca_certificates \
-      || ! has_curl \
-      || ! has_gnupg \
-      || ! has_lsb_release \
-      || ! has_git \
-      || ! has_unzip; then
+    if [ ! has_curl ] || \
+      [ ! has_gnupg ] || \
+      [ ! has_lsb_release ] || \
+      [ ! has_git ] || \
+      [ ! has_unzip ]; then
       info "Installing dependencies..."
       info ""
       apt_update_packges_info
-      apt_get_install_pkgs ca-certificates curl gnupg lsb-release git unzip
+      apt_get_install_pkgs ca-certificates curl gnupg lsb-release git unzip dialog
     fi
 }
 
@@ -659,7 +658,7 @@ https://download.docker.com/linux/$(get_distro_name) $(lsb_release -cs) stable" 
 
 apt_firewalld_install() {
   is_enabled_firewalld() {
-    if [ "$(systemctl is-enabled firewalld)" == "enabled" ]; then
+    if [ "$(systemctl is-enabled firewalld)" = "enabled" ]; then
       return 0
     else
       return 1
@@ -667,14 +666,14 @@ apt_firewalld_install() {
   }
 
   is_active_firewalld() {
-    if [ "$(systemctl is-active firewalld)" == "active" ]; then
+    if [ "$(systemctl is-active firewalld)" = "active" ]; then
       return 0
     else
       return 1
     fi
   }
 
-  if [ $IS_OPEN_PORTS == "true" ]; then
+  if [ $IS_OPEN_PORTS = "true" ]; then
     if ! has_firewalld; then
       info "Installing firewalld..."
       info ""
@@ -701,10 +700,10 @@ apt_firewalld_install() {
 }
 
 open_ports() {
-  if [ $IS_OPEN_PORTS == "true" ]; then
+  if [ $IS_OPEN_PORTS = "true" ]; then
 
-    if ! sudocmd "open udp port $1" firewall-cmd --permanent --zone=public --add-port=$1/upd ${QUIET:+-q}; then
-      die "\nOpening port failed. Please run 'sudo firewall-cmd --permanent --zone=public --add-port=$1/upd' and try again."
+    if ! sudocmd "open udp port $1" firewall-cmd --permanent --zone=public --add-port=$1/udp ${QUIET:+-q}; then
+      die "\nOpening port failed. Please run 'sudo firewall-cmd --permanent --zone=public --add-port=$1/udp' and try again."
     fi
 
     if ! sudocmd "open tcp port $2" firewall-cmd --permanent --zone=public --add-port=$2/tcp ${QUIET:+-q}; then
@@ -718,8 +717,8 @@ open_ports() {
 }
 
 close_ports() {
-  if ! sudocmd "close udp port $1" firewall-cmd --permanent --zone=public --remove-port=$1/upd ${QUIET:+-q}; then
-    die "\nClosing port failed. Please run 'sudo firewall-cmd --permanent --zone=public --add-port=$1/upd' and try again."
+  if ! sudocmd "close udp port $1" firewall-cmd --permanent --zone=public --remove-port=$1/udp ${QUIET:+-q}; then
+    die "\nClosing port failed. Please run 'sudo firewall-cmd --permanent --zone=public --add-port=$1/udp' and try again."
   fi
 
   if ! sudocmd "close tcp port $2" firewall-cmd --permanent --zone=public --remove-port=$2/tcp ${QUIET:+-q}; then
@@ -738,14 +737,19 @@ apt_clone_repository() {
     apt_get_install_pkgs git
   fi
 
+  if [ -d ${DEST} ]; then
+    die "\nDestination folder is exist. Remove folder and try again. \n'rm -rf ${DEST}'"
+  fi
+
   info "Cloning repository..."
   info ""
-  if ! sudocmd "clone repository" git clone ${REPO_URL} ${DEST} ${QUIET:+-q}; then
+  if ! git clone ${REPO_URL} ${DEST} ${QUIET:+-q}; then
     die "\nCloning repository failed. "
   fi
 }
 
 create_env_file() {
+
 cat << EOF > ${DEST}/${NIKA_VPN_ENV_FILENAME}
 TIME_ZONE=${TIME_ZONE}
 SERVICES_SUBNET=${SERVICES_SUBNET}
@@ -776,7 +780,6 @@ WG_VPN_CLIENT_ISOLATION=${WG_VPN_CLIENT_ISOLATION}
 EOF
 }
 
-
 run_services() {
   if [ -d ${DEST} ]; then
     info "Running services..."
@@ -788,7 +791,6 @@ run_services() {
     else
       return 1
     fi
-  fi
   else
     return 1
   fi
@@ -820,12 +822,19 @@ cat $nika_vpn_info_file
   fi
 }
 
+get_wireguard_private_key() {
+  if ! has_docker ; then
+    die "Docker is not installed. Please install Docker and try again."
+  fi
+  sudo docker run -it --rm ghcr.io/freifunkmuc/wg-access-server wg genkey
+}
+
 do_ubuntu_install() {
   install_dependencies() {
     apt_auto_upgrade
     apt_install_dependencies
-    apt_docker_install
     apt_firewalld_install
+    apt_docker_install
   }
 
   install_sevices() {
@@ -890,12 +899,19 @@ GETDISTRO
   esac
 }
 
+can_install() {
+  if has_systemd_detect_virt; then
+    if [ "$( systemd-detect-virt )" = "openvz" ]; then
+        die "OpenVZ virtualization is not supported"
+    fi
+  fi
+}
+
 # Determine operating system and attempt to install.
 do_os() {
-  [ "$DEST" == "" ] && DEST=$DEFAULT_DEST
-
   case "$(uname)" in
     "Linux")
+      can_install
       do_distro
       ;;
     # "Darwin")
@@ -913,8 +929,8 @@ has_nika_vpn() {
   fi
   if has_docker && is_docker_active; then
       local dockerps=$(sudo docker ps)
-      if echo $dockerps | grep -q 'unbound' || \
-         echo $dockerps | grep -q 'pihole' || \
+      if echo $dockerps | grep -q 'unbound'  || \
+         echo $dockerps | grep -q 'pihole'  || \
          echo $dockerps | grep -q 'wg-access-server'; then
         return 0
       else
@@ -978,24 +994,22 @@ validate_params() {
     die "The specified local address ${WG_LOCAL_IP} does not belong to the specified network ${SERVICES_SUBNET}"
   fi
 
-  if [ "$subnet_prefix" == "$wg_subnet_prefix" ]; then
+  if [ "$subnet_prefix" = "$wg_subnet_prefix" ]; then
     die "Subnet ranges for Nika-VPN services and VPN users must not match"
   fi
 
-  if [ "$WG_PORT" == "$WG_WIREGUARD_PORT" ]; then
+  if [ "$WG_PORT" = "$WG_WIREGUARD_PORT" ]; then
     die "The port for connecting to the VPN and the port for administering the VPN must not be the same."
   fi
-}
 
-can_install() {
-  if has_systemd_detect_virt; then
-    if [ "$( systemd-detect-virt )" == "openvz" ]; then
-        die "OpenVZ virtualization is not supported"
-    fi
-  fi
+  [ "$DEST" = "" ] && DEST=$DEFAULT_DEST
+  [ "$WG_WIREGUARD_PRIVATE_KEY" = "" ] && WG_WIREGUARD_PRIVATE_KEY=$(get_wireguard_private_key)
+  [ "$WG_ADMIN_PASSWORD" = "" ] && WG_ADMIN_PASSWORD=$(generate_password)
 }
 
 trap cleanup_temp_dir EXIT
+
+make_temp_dir
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -1170,7 +1184,6 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-can_install
 validate_params
 check_nika_vpn_installed
 do_os
