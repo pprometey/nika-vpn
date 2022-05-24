@@ -1086,7 +1086,6 @@ while [ $# -gt 0 ]; do
       else
         show_error_invalid_argument_value "$1" "$2"
       fi
-      shift 2
       ;;
     -wpk|--wireguard-private-key)
       WG_WIREGUARD_PRIVATE_KEY="$2"
@@ -1106,7 +1105,6 @@ while [ $# -gt 0 ]; do
       else
         show_error_invalid_argument_value "$1" "$2"
       fi
-      shift 2
       ;;
     -ap|--admin-port)
       if set_admin_port $2 ; then
@@ -1114,7 +1112,6 @@ while [ $# -gt 0 ]; do
       else
         show_error_invalid_argument_value "$1" "$2"
       fi
-      shift 2
       ;;
     -ll|--log-level)
       if set_log_level $2 ; then
@@ -1122,7 +1119,6 @@ while [ $# -gt 0 ]; do
       else
         show_error_invalid_argument_value "$1" "$2"
       fi
-      shift 2
       ;;
     -ws|--wg-storage)
       WG_STORAGE="$2"
