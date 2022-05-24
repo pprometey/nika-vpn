@@ -45,7 +45,7 @@ WG_VPN_CIDR="10.44.0.0/24" # -vc|--vpn-cidr
 WG_VPN_CIDRV6="0" # -vc6|--vpn-cidrv6 _
 WG_IPV4_NAT_ENABLED="true" # -nd|--nat-disabled
 WG_IPV6_NAT_ENABLED="false" # -ne6|--nat-enable-v6
-WG_VPN_ALLOWED_IPS="0.0.0.0/0, ::/0" # -ai|--allowed-ips _
+WG_VPN_ALLOWED_IPS="0.0.0.0/0,::/0" # -ai|--allowed-ips _
 WG_DNS_ENABLED="true" # -dnd|--dns-disabled
 WG_DNS_DOMAIN="" # -dd|--dns-domain _
 WG_EXTERNAL_HOST="" # -eh|--external-host _
@@ -581,7 +581,7 @@ apt_auto_upgrade() {
     if  ! has_unattended_upgrades  ||  ! has_dialog; then
       apt_update_packges_info
       apt_upgrade
-      apt_get_install_pkgs unattended-upgrades dialog
+      apt_get_install_pkgs dialog unattended-upgrades
     fi
     if ! sudocmd "enable auto-upgrade OS" dpkg-reconfigure -pmedium unattended-upgrades; then
       die "\nEnabling auto-upgrade OS failed.  Please run 'sudo dpkg-reconfigure -plow unattended-upgrades' and try again."
@@ -780,10 +780,25 @@ WG_VPN_CLIENT_ISOLATION=${WG_VPN_CLIENT_ISOLATION}
 EOF
 }
 
+
+get_wireguard_private_key() {
+  if ! has_docker ; then
+    die "Docker is not installed. Please install Docker and try again."
+  fi
+  sudo docker run -it --rm ghcr.io/freifunkmuc/wg-access-server wg genkey
+}
+
+set_blank_params() {
+    [ "$DEST" = "" ] && DEST=$DEFAULT_DEST
+    [ "$WG_WIREGUARD_PRIVATE_KEY" = "" ] && WG_WIREGUARD_PRIVATE_KEY=$(get_wireguard_private_key)
+    [ "$WG_ADMIN_PASSWORD" = "" ] && WG_ADMIN_PASSWORD=$(generate_password)
+}
+
 run_services() {
   if [ -d ${DEST} ]; then
     info "Running services..."
     info ""
+
     cd ${DEST}
     create_env_file
     if sudocmd "run services" docker compose up -d; then
@@ -822,13 +837,6 @@ cat $nika_vpn_info_file
   fi
 }
 
-get_wireguard_private_key() {
-  if ! has_docker ; then
-    die "Docker is not installed. Please install Docker and try again."
-  fi
-  sudo docker run -it --rm ghcr.io/freifunkmuc/wg-access-server wg genkey
-}
-
 do_ubuntu_install() {
   install_dependencies() {
     apt_auto_upgrade
@@ -841,7 +849,9 @@ do_ubuntu_install() {
     print_separator
     install_dependencies
     print_separator
+    set_blank_params
     apt_clone_repository
+    print_separator
     run_services
     open_ports $WG_WIREGUARD_PORT $WG_PORT
     print_separator
@@ -899,7 +909,7 @@ GETDISTRO
   esac
 }
 
-can_install() {
+linux_can_install() {
   if has_systemd_detect_virt; then
     if [ "$( systemd-detect-virt )" = "openvz" ]; then
         die "OpenVZ virtualization is not supported"
@@ -911,7 +921,7 @@ can_install() {
 do_os() {
   case "$(uname)" in
     "Linux")
-      can_install
+      linux_can_install
       do_distro
       ;;
     # "Darwin")
@@ -1001,10 +1011,6 @@ validate_params() {
   if [ "$WG_PORT" = "$WG_WIREGUARD_PORT" ]; then
     die "The port for connecting to the VPN and the port for administering the VPN must not be the same."
   fi
-
-  [ "$DEST" = "" ] && DEST=$DEFAULT_DEST
-  [ "$WG_WIREGUARD_PRIVATE_KEY" = "" ] && WG_WIREGUARD_PRIVATE_KEY=$(get_wireguard_private_key)
-  [ "$WG_ADMIN_PASSWORD" = "" ] && WG_ADMIN_PASSWORD=$(generate_password)
 }
 
 trap cleanup_temp_dir EXIT
