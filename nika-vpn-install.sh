@@ -835,7 +835,6 @@ cat $nika_vpn_info_file
 
 do_ubuntu_install() {
   install_dependencies() {
-    apt_auto_upgrade
     apt_install_dependencies
     apt_firewalld_install
     apt_docker_install
