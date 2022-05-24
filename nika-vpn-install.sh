@@ -9,7 +9,7 @@
 # or:
 #   'wget -qO- https://bit.ly/nika-vpn-install | sh'
 #
-# Copyright (c) 2018 Alexei Chernyavski. Released under the MIT License.
+# Copyright (c) 2018 Alexei Chernyavski. Released under the MIT License.priva
 
 REPO_URL="https://github.com/pprometey/nika-vpn.git"
 PROJECT_NAME="nika-vpn"
@@ -782,7 +782,7 @@ get_wireguard_private_key() {
   if ! has_docker ; then
     die "Docker is not installed. Please install Docker and try again."
   fi
-  sudo docker run -it --rm ghcr.io/freifunkmuc/wg-access-server wg genkey
+  sudo docker run --rm ghcr.io/freifunkmuc/wg-access-server wg genkey
 }
 
 
