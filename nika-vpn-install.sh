@@ -1,471 +1,1176 @@
-#!/bin/bash
+#!/bin/sh -e
 #
-# https://github.com/pprometey/nika-vpn
+# Nika-VPN installation script.
+#
+# Repository: https://github.com/pprometey/nika-vpn
+#
+# This script is meant for quick & easy install via:
+#   'curl -sSL https://bit.ly/nika-vpn-install | sh'
+# or:
+#   'wget -qO- https://bit.ly/nika-vpn-install | sh'
 #
 # Copyright (c) 2018 Alexei Chernyavski. Released under the MIT License.
 
-# Checking Prerequisites
-if [[ "$EUID" -ne 0 ]]; then
-    echo "Sorry, you need to run this as root (sudo bash nika-vpn-install.sh)"
-    exit 1
-fi
+REPO_URL="https://github.com/pprometey/nika-vpn.git"
+PROJECT_NAME="nika-vpn"
+DEFAULT_DEST="${HOME}/${PROJECT_NAME}"
+NIKA_VPN_INFO_FILENAME=".${PROJECT_NAME}-info"
+NIKA_VPN_ENV_FILENAME=".env"
+DEST="" # -d|--dest _
+FORCE="" # -f|--force
+QUIET="" # -q|--quiet
+NIKA_VPN_TEMP_DIR=
 
-# Detect OS
-if [[ -e /etc/debian_version ]]; then
-    DISTRO=$( lsb_release -is )
-else
-    echo "Your distribution is not supported (yet)"
-    exit 1
-fi
+IS_OPEN_PORTS="true" # -nop|--not-open-ports
+IS_AUTO_UPGRADE="true" # -aud|--auto-upgrade-disable
 
-if [[ "$( systemd-detect-virt )" == "openvz" ]]; then
-    echo "OpenVZ virtualization is not supported"
-    exit 1
-fi
+TIME_ZONE="Etc/UTC" # -tz|--time-zone _
+SERVICES_SUBNET="10.43.0.0/24" # -ss|--services-subnet _
+UNBOUND_LOCAL_IP="10.43.0.2" # -ul|--unbound-local-ip _
+PI_HOLE_LOCAL_IP="10.43.0.3" # -pl|--pihole-local-ip _
+PI_HOLE_PASSWORD= # -pp|--pihole-password _
 
-run_path="$(readlink -f $0 | xargs dirname)"
-root_path=$HOME
-restore_file="$root_path/.nika-vpn-restore"
-restore_timezone="restore_timezone"
-restore_wireguard_port="restore_wireguard_port"
-restore_wireguard_admin_port="restore_wireguard_admin_port"
+WG_LOCAL_IP="10.43.0.4" # -wl|--wg-local-ip _
+WG_WIREGUARD_PRIVATE_KEY= # -wpk|--wireguard-private-key _
+WG_ADMIN_USERNAME="admin@vpn" # -au|--admin-username _
+WG_ADMIN_PASSWORD= # -apwd|--admin-password _
+WG_WIREGUARD_PORT="51820" # -vp|--vpn-port _
+WG_PORT="8000" # -ap|--admin-port _
+WG_LOG_LEVEL="info" # -ll|--log-level _
+WG_STORAGE="sqlite3:///data/db.sqlite3" # -ws|--wg-storage _
+WG_DISABLE_METADATA="false" # -dm|--disable-metadata
+WG_FILENAME="NikaVpnClient" # -сf|--config-filename _
+WG_WIREGUARD_INTERFACE="wg0" # -wi|--wireguard-interface _
+WG_VPN_CIDR="10.44.0.0/24" # -vc|--vpn-cidr
+WG_VPN_CIDRV6="0" # -vc6|--vpn-cidrv6 _
+WG_IPV4_NAT_ENABLED="true" # -nd|--nat-disabled
+WG_IPV6_NAT_ENABLED="false" # -ne6|--nat-enable-v6
+WG_VPN_ALLOWED_IPS="0.0.0.0/0, ::/0" # -ai|--allowed-ips _
+WG_DNS_ENABLED="true" # -dnd|--dns-disabled
+WG_DNS_DOMAIN="" # -dd|--dns-domain _
+WG_EXTERNAL_HOST="" # -eh|--external-host _
+WG_VPN_CLIENT_ISOLATION="false" # -ci|--client-isolation
+# -------------------------------------------------------------------------------
 
-create_restore_file() {
-cat << EOF > $restore_file
-$restore_timezone=
-$restore_wireguard_port=
-$restore_wireguard_admin_port=
-EOF
+# print a message to stdout unless '-q' passed to script
+info() {
+  if [ -z "$QUIET" ] ; then
+    echo "$@"
+  fi
 }
 
-function get_resore_value() {
-    grep "${1}" ${restore_file} | cut -d'=' -f2
+# print a message to stderr and exit with error code
+die() {
+  echo "$@" >&2
+  exit 1
 }
 
-first_run() {
-    echo
-    echo 'Installing required programs and dependencies'
-    echo
-    echo "----- Enable auto-update OS ----- "
-    # Update packages
-    sudo apt update && sudo apt upgrade -y
+# print a separator
+print_separator() {
+  info ""
+  info "-------------------------------------------------------------------------------"
+  info ""
+}
 
-    # Install unattended-upgrades
-    sudo apt install -y unattended-upgrades
+to_lowercase() {
+  echo $1 | sed 's/./\L&/g'
+}
 
-    # Configure unattended-upgrades
-    sudo dpkg-reconfigure -pmedium unattended-upgrades
+to_uppercase() {
+  echo $1 | sed 's/./\U&/g'
+}
 
-    echo
-    echo "----- Install dependencies ----- "
-    sudo apt install -y \
-        ca-certificates \
-        curl \
-        gnupg \
-        lsb-release \
-        software-properties-common \
-        git
+generate_password() {
+  echo $(tr -cd '[:alnum:]' < /dev/urandom | fold -w30 | head -n1)
+}
 
-    echo
-    echo "----- Install Docker ----- "
-    # Install docker 
-    ## Add Docker's official GPG key
-    if [[ ! -e /usr/share/keyrings/docker-archive-keyring.gpg ]]; then 
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+function get_env_value() {
+    grep "${1}" ${2} | cut -d'=' -f2
+}
+
+get_subnet_prefix() {
+  echo ${1%.*}
+}
+
+# creates a temporary directory, which will be cleaned up automatically
+# when the script finishes
+make_temp_dir() {
+  NIKA_VPN_TEMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t ${PROJECT_NAME})"
+}
+
+# cleanup the temporary directory if it's been created.  called automatically
+# when the script exits.
+cleanup_temp_dir() {
+  if [ -n "$NIKA_VPN_TEMP_DIR" ] ; then
+    rm -rf "$NIKA_VPN_TEMP_DIR"
+    NIKA_VPN_TEMP_DIR=
+  fi
+}
+
+# get in which directory this script is run
+get_run_path() {
+  readlink -f $0 | xargs dirname
+}
+
+get_public_ip() {
+  if ! has_curl && ! has_wget ; then
+    if ! try_install_pkgs curl wget; then
+      die "Neither wget nor curl is available, please install one to continue."
+    fi
+  fi
+  local public_ip=$(wget -T 10 -t 1 -4qO- "http://ip1.dynupdate.no-ip.com/" \
+    || curl -m 10 -4Ls "http://ip1.dynupdate.no-ip.com/")
+
+  if ! echo $public_ip | grep -m 1 -oE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'; then
+    die "Could not determine public IP address."
+  fi
+}
+
+# -------------------------------------------------------------------------------
+
+# Adds a 'sudo' prefix if sudo is available to execute the given command
+# If not, the given command is run as is
+# When requesting root permission, always show the command and never re-use cached credentials.
+sudocmd() {
+  reason="$1"; shift
+  if command -v sudo >/dev/null; then
+    echo "Running command as root for $reason."
+    echo "     $@"
+    sudo "$@"
+  else
+    "$@"
+  fi
+}
+
+# Check whether the given command exists
+has_cmd() {
+  command -v "$1" > /dev/null 2>&1
+}
+
+# Check whether 'sudo' command exists
+has_sudo() {
+  has_cmd sudo
+}
+
+# Check whether 'perl' command exists
+has_perl() {
+  has_cmd perl
+}
+
+# Check whether 'wget' command exists
+has_wget() {
+  has_cmd wget
+}
+
+# Check whether 'curl' command exists
+has_curl() {
+  has_cmd curl
+}
+
+# Check whether 'lsb_release' command exists
+has_lsb_release() {
+  has_cmd lsb_release
+}
+
+# Check whether 'getconf' command exists
+has_getconf() {
+  has_cmd getconf
+}
+
+has_apt_get() {
+  has_cmd apt-get
+}
+
+has_docker() {
+  has_cmd docker
+}
+
+has_ca_certificates() {
+  has_cmd ca-certificates
+}
+
+has_gnupg() {
+  has_cmd gnupg
+}
+
+has_git() {
+  has_cmd git
+}
+
+has_unzip() {
+  has_cmd unzip
+}
+
+has_timedatectl() {
+  has_cmd timedatectl
+}
+
+has_systemctl() {
+  has_cmd systemctl
+}
+
+has_firewalld() {
+  has_cmd firewalld
+}
+
+has_systemd_detect_virt() {
+  has_cmd systemd-detect-virt
+}
+
+has_unattended_upgrades() {
+  has_cmd unattended-upgrades
+}
+
+# -------------------------------------------------------------------------------
+
+show_help() {
+  echo "the help"
+}
+
+show_error_invalid_argument_value() {
+  echo "For argument $1, value $2 is invalid" >&2
+  exit 1
+}
+
+validate_timezone() {
+  timedatectl list-timezones --no-pager | grep -q "$1"
+}
+
+set_timezone() {
+  if has_timedatectl ; then
+    if validate_timezone $1 ; then
+      TIME_ZONE=$1
+    else
+      return 1
+    fi
+  else
+    die "timedatectl not available."
+  fi
+}
+
+validate_port() {
+ if echo "$1" | grep -Eq '^[0-9]{1,5}$'; then
+     if [ $1 -gt 0 ] && [ $1 -lt 65535 ] ; then
+       return 0
+     else
+       return 1
+     fi
+ else
+   return 1
+ fi
+}
+
+set_vpn_port() {
+  if validate_port $1 ; then
+    WG_WIREGUARD_PORT=$1
+  else
+    return 1
+  fi
+}
+
+set_admin_port() {
+  if validate_port $1 ; then
+    WG_PORT=$1
+  else
+    return 1
+  fi
+}
+
+validate_subnet() {
+  echo $1 | grep -Eq '(^[0-2][0-5]{1,2}?\.|^[3-9][0-9]?\.)([0-2][0-5]{1,2}?\.|[3-9][0-9]?\.)([0-2][0-5]{1,2}?\.|[3-9][0-9]?\.)([0-2][0-5]{1,2}?\/|[3-9][0-9]?\/)([1-9]|[1-2][\d]|3[0-2])$'
+}
+
+set_service_subnet() {
+  if validate_subnet $1 ; then
+    SERVICE_SUBNET=$1
+  else
+    return 1
+  fi
+}
+
+set_vpn_cidr() {
+  if validate_subnet $1 ; then
+    WG_VPN_CIDR=$1
+  else
+    return 1
+  fi
+}
+
+validate_ipv4() {
+  echo $1 | grep -Eq '(^[0-2][0-5]{1,2}?\.|^[3-9][0-9]?\.)([0-2][0-5]{1,2}?\.|[3-9][0-9]?\.)([0-2][0-5]{1,2}?\.|[3-9][0-9]?\.)([0-2][0-5]{1,2}?$|[3-9][0-9]?$)'
+}
+
+set_unbound_local_ip() {
+  if validate_ipv4 $1 ; then
+    UNBOUND_LOCAL_IP=$1
+  else
+    return 1
+  fi
+}
+
+set_pihole_local_ip() {
+  if validate_ipv4 $1 ; then
+    PI_HOLE_LOCAL_IP=$1
+  else
+    return 1
+  fi
+}
+
+set_wg_local_ip() {
+  if validate_ipv4 $1 ; then
+    WG_LOCAL_IP=$1
+  else
+    return 1
+  fi
+}
+
+validate_log_level() {
+ echo $1 | grep -Eq '^(trace|debug|info|error|fatal)$'
+}
+
+set_log_level() {
+  if validate_log_level $1 ; then
+    LOG_LEVEL=$1
+  else
+    return 1
+  fi
+}
+
+validate_domain_name() {
+  echo "$1" | grep -Eq '^([a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,}$'
+}
+
+set_dns_domain() {
+  if validate_domain_name $1 ; then
+    WG_DNS_DOMAIN=$1
+  else
+    return 1
+  fi
+}
+
+set_external_host() {
+  if validate_domain_name $1 ; then
+    WG_EXTERNAL_HOST=$1
+  else
+    return 1
+  fi
+}
+
+# -------------------------------------------------------------------------------
+
+# Install packages using apt-get
+apt_get_install_pkgs() {
+  missing=
+  for pkg in $*; do
+    if ! dpkg -s $pkg 2>/dev/null | grep '^Status:.*installed' >/dev/null; then
+      missing="$missing $pkg"
+    fi
+  done
+  if [ "$missing" == "" ]; then
+    info "Already installed!"
+  elif ! sudocmd "install required system dependencies" apt-get install -y ${QUIET:+-qq}$missing; then
+    die "\nInstalling apt packages failed.  Please run 'apt-get update' and try again."
+  fi
+}
+
+# Attempt to install packages using whichever of apt-get, dnf, yum, or apk is
+# available.
+try_install_pkgs() {
+  if has_apt_get ; then
+    apt_get_install_pkgs "$@"
+  # elif has_dnf ; then
+  #   dnf_install_pkgs "$@"
+  # elif has_yum ; then
+  #   yum_install_pkgs "$@"
+  # elif has_apk ; then
+  #   apk_install_pkgs "$@"
+  else
+    return 1
+  fi
+}
+
+# Check for 'curl' or 'wget' and attempt to install 'curl' if neither found,
+# or fail the script if that is not possible.
+check_dl_tools() {
+  if ! has_curl && ! has_wget ; then
+    if ! try_install_pkgs curl wget; then
+      die "Neither wget nor curl is available, please install one to continue."
+    fi
+  fi
+}
+
+# Download a URL to file using 'curl' or 'wget'.
+dl_to_file() {
+  if has_curl ; then
+    if ! curl ${QUIET:+-sS} -L -o "$2" "$1"; then
+      die "curl download failed: $1"
+    fi
+  elif has_wget ; then
+    if ! wget ${QUIET:+-q} "-O$2" "$1"; then
+      die "wget download failed: $1"
+    fi
+  else
+    # should already have checked for this, otherwise this message will probably
+    # not be displayed, since dl_to_stdout will be part of a pipeline
+    die "Neither wget nor curl is available, please install one to continue."
+  fi
+}
+
+dl_to_stdout() {
+  if has_curl ; then
+    if ! try_install_pkgs curl ; then
+      die "This script requires 'curl', please install it to continue."
+    fi
+    if ! curl -fsSL "$1" 2>/dev/null; then
+      die "curl download failed: $1"
+    fi
+  else
+    die "Neither wget nor curl is available, please install one to continue."
+  fi
+}
+
+# -------------------------------------------------------------------------------
+
+# determines the the CPU's instruction set
+get_isa() {
+  if arch | grep -Eq 'armv[78]l?' ; then
+    echo arm
+  elif arch | grep -q aarch64 ; then
+    echo aarch64
+  else
+    echo x86
+  fi
+}
+
+# determines 64- or 32-bit architecture
+# if getconf is available, it will return the arch of the OS, as desired
+# if not, it will use uname to get the arch of the CPU, though the installed
+# OS could be 32-bits on a 64-bit CPU
+get_arch() {
+  if has_getconf ; then
+    if getconf LONG_BIT | grep -q 64 ; then
+      echo 64
+    else
+      echo 32
+    fi
+  else
+    case "$(uname -m)" in
+      *64)
+        echo 64
+        ;;
+      *)
+        echo 32
+        ;;
+    esac
+  fi
+}
+
+# exits with code 0 if arm ISA is detected as described above
+is_arm() {
+  test "$(get_isa)" = arm
+}
+
+# exits with code 0 if aarch64 ISA is detected as described above
+is_aarch64() {
+  test "$(get_isa)" = aarch64
+}
+
+# exits with code 0 if a x86_64-bit architecture is detected as described above
+is_x86_64() {
+  test "$(get_arch)" = 64 -a "$(get_isa)" = "x86"
+}
+
+# Attempts to determine the running Linux distribution.
+# Prints "DISTRO;VERSION" (distribution name and version)"."
+distro_info() {
+  parse_lsb() {
+    lsb_release -a 2> /dev/null | perl -ne "$1"
+  }
+
+  try_lsb() {
+    if has_lsb_release ; then
+      TL_DIST="$(parse_lsb 'if(/Distributor ID:\s+([^ ]+)/) { print "\L$1"; }')"
+      TL_VERSION="$(parse_lsb 'if(/Release:\s+([^ ]+)/) { print "\L$1"; }')"
+      echo "$TL_DIST;$TL_VERSION"
+    else
+      return 1
+    fi
+  }
+
+  try_release() {
+    parse_release() {
+      perl -ne "$1" /etc/*release 2>/dev/null
+    }
+
+    parse_release_id() {
+      parse_release 'if(/^(DISTRIB_)?ID\s*=\s*"?([^"]+)/) { print "\L$2"; exit 0; }'
+    }
+
+    parse_release_version() {
+      parse_release 'if(/^(DISTRIB_RELEASE|VERSION_ID)\s*=\s*"?([^"]+)/) { print $2; exit 0; }'
+    }
+
+    TR_RELEASE="$(parse_release_id);$(parse_release_version)"
+
+    if [ ";" == "$TR_RELEASE" ] ; then
+      if [ -e /etc/arch-release ] ; then
+        # /etc/arch-release exists but is often empty
+        echo "arch;"
+      elif [ -e /etc/centos-release ] && grep -q "\<6\>" /etc/centos-release ; then
+        # /etc/centos-release has a non-standard format before version 7
+        echo "centos;6"
+      else
+        return 1
+      fi
+    else
+      echo "$TR_RELEASE"
+    fi
+  }
+
+  try_issue() {
+    case "$(cat /etc/issue 2>/dev/null)" in
+      "Arch Linux"*)
+        echo "arch;" # n.b. Version is not available in /etc/issue on Arch
+        ;;
+      "Ubuntu"*)
+        echo "ubuntu;$(perl -ne 'if(/Ubuntu (\d+\.\d+)/) { print $1; }' < /etc/issue)"
+        ;;
+      "Debian"*)
+        echo "debian;$(perl -ne 'if(/Debian GNU\/Linux (\d+(\.\d+)?)/) { print $1; }' < /etc/issue)"
+        ;;
+      *"SUSE"*)
+        echo "suse;$(perl -ne 'if(/SUSE\b.* (\d+\.\d+)/) { print $1; }' < /etc/issue)"
+        ;;
+      *"NixOS"*)
+        echo "nixos;$(perl -ne 'if(/NixOS (\d+\.\d+)/) { print $1; }' < /etc/issue)"
+        ;;
+      "CentOS"*)
+        echo "centos;$(perl -ne 'if(/^CentOS release (\d+)\./) { print $1; }' < /etc/issue)"
+        ;;
+      *)
+    esac
+    # others do not output useful info in issue, return empty
+  }
+
+  try_lsb || try_release || try_issue
+}
+
+get_distro_name() {
+  echo "$(distro_info | cut -d';' -f1)"
+}
+
+# -------------------------------------------------------------------------------
+
+# Download packages information from all configured sources
+apt_update_packges_info() {
+  if ! sudocmd "update packages list" apt-get update -y ${QUIET:+-qq}; then
+    die "\nUpdating package list failed.  Please run 'apt-get update' and try again."
+  fi
+}
+
+apt_upgrade() {
+  if ! sudocmd "upgrade OS" apt-get upgrade -y ${QUIET:+-qq}; then
+    die "\nUpdating package list failed.  Please run 'apt-get update' and try again."
+  fi
+}
+
+apt_auto_upgrade() {
+  if [ ${IS_AUTO_UPGRADE} == true ]; then
+    info "Enable auto upgrade OS..."
+    info ""
+    if ! has_unattended_upgrades; then
+      apt_update_packges_info
+      apt_upgrade
+      apt_get_install_pkgs unattended-upgrades
+    fi
+    if ! sudocmd "enable auto-upgrade OS" dpkg-reconfigure -plow unattended-upgrades; then
+      die "\nEnabling auto-upgrade OS failed.  Please run 'sudo dpkg-reconfigure -plow unattended-upgrades' and try again."
+    fi
+  fi
+}
+
+# Install dependencies for distros that use Apt
+apt_install_dependencies() {
+    if ! has_ca_certificates \
+      || ! has_curl \
+      || ! has_gnupg \
+      || ! has_lsb_release \
+      || ! has_git \
+      || ! has_unzip; then
+      info "Installing dependencies..."
+      info ""
+      apt_update_packges_info
+      apt_get_install_pkgs ca-certificates curl gnupg lsb-release git unzip
+    fi
+}
+
+is_docker_active() {
+  if has_docker; then
+    if systemctl show --property ActiveState docker | grep -q 'ActiveState=active'; then
+      return 0
+    else
+      return 1
+    fi
+  else
+    return 1
+  fi
+}
+
+apt_docker_install() {
+  add_docker_repository() {
+    add_docker_gpg_key() {
+      save_docker_gpg_key() {
+        if ! sudocmd "add Docker’s official GPG key" gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg ; then
+          die "\nAdding Docker’s official GPG key failed."
+        fi
+      }
+
+      dl_to_stdout "https://download.docker.com/linux/$(get_distro_name)/gpg" | save_docker_gpg_key
+    }
+
+    add_docker_source_list_file() {
+      save_docker_source_list() {
+        if ! sudocmd "add Docker repository" tee /etc/apt/sources.list.d/docker.list > /dev/null ; then
+          die "\nAdding Docker repository failed."
+        fi
+      }
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] \
+https://download.docker.com/linux/$(get_distro_name) $(lsb_release -cs) stable" | save_docker_source_list
+    }
+
+    [ ! -e "/usr/share/keyrings/docker-archive-keyring.gpg" ] && add_docker_gpg_key
+    [ ! -e "/etc/apt/sources.list.d/docker.list" ] && add_docker_source_list_file
+  }
+
+  if ! has_docker ; then
+    info "Installing docker..."
+    info ""
+    add_docker_repository
+    apt_update_packges_info
+    apt_get_install_pkgs docker-ce docker-ce-cli containerd.io docker-compose-plugin
+
+    if  ! is_docker_active ; then
+      if ! sudocmd "activate docker" systemctl start docker ; then
+        die "\nStarting docker failed. Please run 'sudo systemctl start docker' and try again."
+      fi
+    fi
+  fi
+}
+
+apt_firewalld_install() {
+  is_enabled_firewalld() {
+    if [ "$(systemctl is-enabled firewalld)" == "enabled" ]; then
+      return 0
+    else
+      return 1
+    fi
+  }
+
+  is_active_firewalld() {
+    if [ "$(systemctl is-active firewalld)" == "active" ]; then
+      return 0
+    else
+      return 1
+    fi
+  }
+
+  if [ $IS_OPEN_PORTS == "true" ]; then
+    if ! has_firewalld; then
+      info "Installing firewalld..."
+      info ""
+      apt_get_install_pkgs firewalld
     fi
 
-    ## Add Docker's repository
-    echo \
-    "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
-    $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-    ## Update the apt package index
-    sudo apt update
-
-    ## Install the latest version of Docker CE
-    sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-
-    create_restore_file
-}
-
-get_wireguard_private_key() {
-    wireguard_private_key=$(docker run -it --rm ghcr.io/freifunkmuc/wg-access-server wg genkey)
-}
-
-default_time_zone="Etc/UTC";
-get_time_zone() {
-    echo
-    echo "Enter the time zone of the server"
-    echo "See the list of zones here: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
-    read -p "Time zone [$default_time_zone]: " time_zone
-    until [[ -z "$time_zone" || "$time_zone" =~ ^[a-zA-Z/]+$ ]]; do
-        echo "$time_zone: invalid time zone."
-        read -p "Time zone: " time_zone
-    done
-    [[ -z "$time_zone" ]] && time_zone=$default_time_zone
-}
-
-get_public_ip=$(grep -m 1 -oE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' \
-   <<< "$(wget -T 10 -t 1 -4qO- "http://ip1.dynupdate.no-ip.com/" \
-   || curl -m 10 -4Ls "http://ip1.dynupdate.no-ip.com/")")
-
-set_local_ip() {
-    local_subnet_prefix=${1%.*}
-    unbound_local_ip=$local_subnet_prefix.254
-    pihole_local_ip=$local_subnet_prefix.253
-    wireguard_local_ip=$local_subnet_prefix.252
-}
-
-default_local_subnet="10.254.254.0/24"
-get_local_subnet() {
-    echo
-    echo "Enter internal subnet for the wireguard and server and peers"
-    read -p "Local subnet [$default_local_subnet]: " local_subnet
-    until [[ -z "$local_subnet" || "$local_subnet" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\/[0-9]{1,2}$ ]]; do
-        echo "$local_subnet: invalid subnet."
-        read -p "Local subnet: " local_subnet
-    done
-    [[ -z "$local_subnet" ]] && local_subnet=$default_local_subnet
-    set_local_ip $local_subnet
-}
-
-get_pihole_password() {
-    echo
-    echo "Enter the password for the Phole Admin Panel (allowed empty)"
-    read -p "Password: " pihole_password
-}
-
-default_wireguard_admin_name="admin@vpn"
-get_wireguard_admin_name() {
-    echo
-    echo "Enter the administrator username of the wg-access-server"
-    read -p "Administrator username [$default_wireguard_admin_name]: " wireguard_admin_name
-    [[ -z "$wireguard_admin_name" ]] && wireguard_admin_name=$default_wireguard_admin_name
-}
-
-get_wireguard_admin_password(){
-    echo
-    echo "Enter the administrator password of the wg-access-server"
-    read -p "Administrator password [randomly generated if empty]: " wireguard_admin_password
-    [[ -z "$wireguard_admin_password" ]] && wireguard_admin_password=$(tr -cd '[:alnum:]' < /dev/urandom | fold -w30 | head -n1) \
-        && echo "The administrator password is: $wireguard_admin_password"  
-}
-
-default_wireguard_port="51820"
-get_wireguard_port() {
-    echo
-    echo "What port should WireGuard listen to?"
-    read -p "Port [$default_wireguard_port]: " wireguard_port
-    until [[ -z "$wireguard_port" || "$wireguard_port" =~ ^[0-9]+$ && "$wireguard_port" -le 65535 ]]; do
-        echo "$wireguard_port: invalid port."
-        read -p "Port: " wireguard_port
-    done
-    [[ -z "$wireguard_port" ]] && wireguard_port=$default_wireguard_port
-}
-
-default_wireguard_admin_port="8000"
-get_wireguard_admin_port() {
-    echo
-    echo "Enter the port for Wireguard admin panel (http)"
-    read -p "Port [$default_wireguard_admin_port]: " wireguard_admin_port
-    until [[ -z "$wireguard_admin_port" || "$wireguard_admin_port" =~ ^[0-9]+$ && "$wireguard_admin_port" -le 65535 ]]; do
-        echo "$wireguard_admin_port: invalid port."
-        read -p "Port: " wireguard_admin_port
-    done
-    [[ -z "$wireguard_admin_port" ]] && wireguard_admin_port=$default_wireguard_admin_port
-}
-
-default_wireguard_clients_subnet="10.254.253.0/24"
-get_wireguard_client_subnet() {
-    echo
-    echo "Enter internal subnet for the Wireguard VPN clients"
-    read -p "Wiregurad clients local subnet [$default_wireguard_clients_subnet]: " wireguard_clients_subnet
-    until [[ -z "$wireguard_clients_subnet" || "$wireguard_clients_subnet" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\/[0-9]{1,2}$ ]]; do
-        echo "$wireguard_clients_subnet: invalid subnet."
-        read -p "Wiregurad clients local subnet: " wireguard_clients_subnet
-    done
-    [[ -z "$wireguard_clients_subnet" ]] && wireguard_clients_subnet=$default_wireguard_clients_subnet
-}
-
-default_wireguard_allowed_ips="0.0.0.0/0,::/0"
-get_wireguard_allowed_ips() {
-    echo
-    echo "Allowed IPs that clients may route through this VPN"
-    read -p "Allowed IPs [$default_wireguard_allowed_ips]: " wireguard_allowed_ips
-    until [[ -z "$wireguard_allowed_ips" ]]; do
-        echo "$wireguard_allowed_ips: invalid allowed IPs."
-        read -p "Allowed IPs: " wireguard_clients_subnet
-    done
-    [[ -z "$wireguard_allowed_ips" ]] && wireguard_allowed_ips=$default_wireguard_allowed_ips
-}
-
-set_timezone_host() {
-    echo
-    echo "Set timezone"
-
-    local local_restore_timezone="$restore_timezone=$(cat /etc/timezone | sed 's!/!\\/!g')"
-    sed -i "s/$restore_timezone.*/$local_restore_timezone/" $restore_file
-
-    sudo timedatectl set-timezone $time_zone
-}
-
-restore_timezone_host() {
-    echo
-    echo "Restore timezone"
-
-    if [[ -e $restore_file ]]; then        
-        local local_restore_timezone=$(get_resore_value $restore_timezone)
-        sudo timedatectl set-timezone $local_restore_timezone
+    if ! is_enabled_firewalld; then
+      info "Enabling firewalld..."
+      info ""
+      if ! sudocmd "enable firewalld" systemctl enable firewalld ${QUIET:+-q}; then
+        die "\nEnabling firewalld failed. Please run 'sudo systemctl enable firewalld' and try again."
+      fi
     fi
+
+    if ! is_active_firewalld; then
+      info "Starting firewalld..."
+      info ""
+      systemctl start firewalld
+      if ! sudocmd "start firewalld" systemctl start firewalld ${QUIET:+-q}; then
+        die "\nStarting firewalld failed. Please run 'sudo systemctl start firewalld' and try again."
+      fi
+    fi
+  fi
 }
 
 open_ports() {
-    sudo iptables -A INPUT -p udp -m state --state NEW -m udp --dport $wireguard_port -j ACCEPT
-    sudo iptables -A INPUT -p tcp -m state --state NEW -m tcp --dport $wireguard_admin_port -j ACCEPT
-   
-    sudo netfilter-persistent save
+  if [ $IS_OPEN_PORTS == "true" ]; then
 
-    if [[ -e $restore_file ]]; then  
-        local local_restore_wireguard_port="$restore_wireguard_port=$wireguard_port"
-        sed -i "s/$restore_wireguard_port.*/$local_restore_wireguard_port/" $restore_file
-
-        local local_restore_wireguard_admin_port="$restore_wireguard_admin_port=$wireguard_admin_port"
-        sed -i "s/$restore_wireguard_admin_port.*/$local_restore_wireguard_admin_port/" $restore_file
-    fi
-}
-
-close_ports() {  
-    if [[ -e $restore_file ]]; then   
-        local local_restore_wireguard_port=$(get_resore_value $restore_wireguard_port)
-        local local_restore_wireguard_admin_port=$(get_resore_value $restore_wireguard_admin_port)
-
-        sudo iptables -D INPUT -p udp -m state --state NEW -m udp --dport $local_restore_wireguard_port -j ACCEPT
-        sudo iptables -D INPUT -p tcp -m state --state NEW -m tcp --dport $local_restore_wireguard_admin_port -j ACCEPT
-
-        sudo netfilter-persistent save
-    fi
-}
-
-path_to_nika_vpn="$root_path/nika-vpn"
-result_file="$run_path/nika-vpn-memo"
-remove_nika_vpn() {
-    echo "Remove Nika VPN"
-
-    cd $path_to_nika_vpn
-
-    docker compose down -v
-
-    cd $root_path 
-    sudo rm -rf $path_to_nika_vpn
-
-    close_ports
-    restore_timezone_host
-
-    if [[ -e $result_file ]]; then
-      sudo rm -f $result_file
-    fi
-}
-
-nika_vpn_repository="https://github.com/pprometey/nika-vpn.git"
-clone_repository() {
-    echo
-    echo "Clone repository"
-
-    if [ -d $path_to_nika_vpn ] || \
-        [ $(docker ps | grep unbound) ] || \
-        [ $(docker ps | grep pihole) ] || \
-        [ $(docker ps | grep wg-access-server) ]; then
-        echo
-        echo "Nika-VPN is already installed, will be uninstalled"
-        remove_nika_vpn
+    if ! sudocmd "open udp port $1" firewall-cmd --permanent --zone=public --add-port=$1/upd ${QUIET:+-q}; then
+      die "\nOpening port failed. Please run 'sudo firewall-cmd --permanent --zone=public --add-port=$1/upd' and try again."
     fi
 
-    git clone $nika_vpn_repository $path_to_nika_vpn && cd $path_to_nika_vpn
-}
-
-general_pre_installation() {
-    if [[ ! -f $restore_file ]]; then
-        echo 
-        echo "This is the first run, you need to install the necessary dependencies"
-        first_run
+    if ! sudocmd "open tcp port $2" firewall-cmd --permanent --zone=public --add-port=$2/tcp ${QUIET:+-q}; then
+      die "\nOpening port failed. Please run 'sudo firewall-cmd --permanent --zone=public --add-port=$2/tcp' and try again."
     fi
 
-    echo 
-    echo "----- Configure Nika-VPN ----- "
-
-    clone_repository
-    get_wireguard_private_key
+    if ! sudocmd "restart firewall" firewall-cmd --reload ${QUIET:+-q}; then
+      die "\nRestarting firewall failed. Please run 'sudo firewall-cmd --reload' and try again."
+    fi
+  fi
 }
 
-set_default_values() {
-    echo
-    echo "Set default values"
+close_ports() {
+  if ! sudocmd "close udp port $1" firewall-cmd --permanent --zone=public --remove-port=$1/upd ${QUIET:+-q}; then
+    die "\nClosing port failed. Please run 'sudo firewall-cmd --permanent --zone=public --add-port=$1/upd' and try again."
+  fi
 
-    time_zone=$default_time_zone
-    set_timezone_host
-    local_subnet=$default_local_subnet
-    set_local_ip $local_subnet
-    pihole_password=""
-    wireguard_clients_subnet=$default_wireguard_clients_subnet
-    wireguard_allowed_ips=$default_wireguard_allowed_ips
+  if ! sudocmd "close tcp port $2" firewall-cmd --permanent --zone=public --remove-port=$2/tcp ${QUIET:+-q}; then
+    die "\nClosing port failed. Please run 'sudo firewall-cmd --permanent --zone=public --add-port=$2/tcp' and try again."
+  fi
+
+  if ! sudocmd "restart firewall" firewall-cmd --reload ${QUIET:+-q}; then
+    die "\nRestarting firewall failed. Please run 'sudo firewall-cmd --reload' and try again."
+  fi
 }
 
-path_to_env_file="$path_to_nika_vpn/.env"
+apt_clone_repository() {
+  if ! has_git ; then
+    info "Installing git..."
+    info ""
+    apt_get_install_pkgs git
+  fi
+
+  info "Cloning repository..."
+  info ""
+  if ! sudocmd "clone repository" git clone ${REPO_URL} ${DEST} ${QUIET:+-q}; then
+    die "\nCloning repository failed. "
+  fi
+}
+
 create_env_file() {
-    echo
-    echo "Create environment docker file"
-
-cat << EOF > $path_to_env_file
-TZ=$time_zone
-
-# local subnet varitables
-LOCAL_SUBNET=$local_subnet
-
-# unbound varitables
-UNBOUND_LOCAL_IP=$unbound_local_ip
-
-# pi-hole varitables 
-PI_HOLE_LOCAL_IP=$pihole_local_ip
-PI_HOLE_PASSWORD=$pihole_password
-
-# wireguard varitables
-WG_WIREGUARD_PRIVATE_KEY=$wireguard_private_key
-WG_WIREGUARD_PORT=$wireguard_port
-WG_VPN_CIDR=$wireguard_clients_subnet
-WG_ADMIN_USERNAME=$wireguard_admin_name
-WG_ADMIN_PASSWORD=$wireguard_admin_password
-WG_LOCAL_IP=$wireguard_local_ip
-WG_PORT=$wireguard_admin_port
-WG_VPN_ALLOWED_IPS=$wireguard_allowed_ips
-WG_DNS_UPSTREAM=$pihole_local_ip
-WG_DNS_ENABLED=true
-WG_LOG_LEVEL=info
-WG_IPV6_NAT_ENABLED=false
-WG_IPV4_NAT_ENABLED=true
-WG_VPN_CIDRV6=0
+cat << EOF > ${DEST}/${NIKA_VPN_ENV_FILENAME}
+TIME_ZONE=${TIME_ZONE}
+SERVICES_SUBNET=${SERVICES_SUBNET}
+UNBOUND_LOCAL_IP=${UNBOUND_LOCAL_IP}
+PI_HOLE_LOCAL_IP=${PI_HOLE_LOCAL_IP}
+PI_HOLE_PASSWORD=${PI_HOLE_PASSWORD}
+WG_LOCAL_IP=${WG_LOCAL_IP}
+WG_WIREGUARD_PRIVATE_KEY=${WG_WIREGUARD_PRIVATE_KEY}
+WG_ADMIN_USERNAME=${WG_ADMIN_USERNAME}
+WG_ADMIN_PASSWORD=${WG_ADMIN_PASSWORD}
+WG_WIREGUARD_PORT=${WG_WIREGUARD_PORT}
+WG_PORT=${WG_PORT}
+WG_LOG_LEVEL=${WG_LOG_LEVEL}
+WG_STORAGE=${WG_STORAGE}
+WG_DISABLE_METADATA=${WG_DISABLE_METADATA}
+WG_FILENAME=${WG_FILENAME}
+WG_WIREGUARD_INTERFACE=${WG_WIREGUARD_INTERFACE}
+WG_VPN_CIDR=${WG_VPN_CIDR}
+WG_VPN_CIDRV6=${WG_VPN_CIDRV6}
+WG_IPV4_NAT_ENABLED=${WG_IPV4_NAT_ENABLED}
+WG_IPV6_NAT_ENABLED=${WG_IPV6_NAT_ENABLED}
+WG_VPN_ALLOWED_IPS=${WG_VPN_ALLOWED_IPS}
+WG_DNS_ENABLED=${WG_DNS_ENABLED}
+WG_DNS_UPSTREAM=${PI_HOLE_LOCAL_IP}
+WG_DNS_DOMAIN=${WG_DNS_DOMAIN}
+WG_EXTERNAL_HOST=${WG_EXTERNAL_HOST}
+WG_VPN_CLIENT_ISOLATION=${WG_VPN_CLIENT_ISOLATION}
 EOF
 }
 
+
+run_services() {
+  if [ -d ${DEST} ]; then
+    info "Running services..."
+    info ""
+    cd ${DEST}
+    create_env_file
+    if sudocmd "run services" docker compose up -d; then
+      return 0
+    else
+      return 1
+    fi
+  fi
+  else
+    return 1
+  fi
+}
+
 print_result() {
-cat << EOF > $result_file
+  if [ -z "$QUIET" ] ; then
+  local nika_vpn_info_file=${NIKA_VPN_TEMP_DIR}/${NIKA_VPN_INFO_FILENAME}
+cat << EOF > $nika_vpn_info_file
 ****************************************************************
 To create users and connect to VPN, go to the VPN server
 administration panel at:
 
-VPN control panel address: $get_public_ip:$wireguard_admin_port
-Login: $wireguard_admin_name
-Password: $wireguard_admin_password
+VPN control panel address: $(get_public_ip):$WG_PORT
+Login: $WG_ADMIN_USERNAME
+Password: $WG_ADMIN_PASSWORD
 
 ----------------------------------------------------------------
 
 To manage the Pi-hole ad blocker, after connecting via VPN,
 go to the administration panel at:
-Pi-hole dashboard: http://$pihole_local_ip/admin
-Password: $pihole_password
-
-----------------------------------------------------------------
- 
-You can always find this memo along the path: 
-$result_file
+Pi-hole dashboard: http://$PI_HOLE_LOCAL_IP/admin
+Password: $PI_HOLE_PASSWORD
 
 ****************************************************************
 EOF
 
-echo
-echo
-cat $result_file
+cat $nika_vpn_info_file
+  fi
 }
 
-general_post_installation() {
-    create_env_file
-    open_ports
-    
-    docker compose up -d
-    docker compose ps
-    
-    echo
+do_ubuntu_install() {
+  install_dependencies() {
+    apt_auto_upgrade
+    apt_install_dependencies
+    apt_docker_install
+    apt_firewalld_install
+  }
+
+  install_sevices() {
+    print_separator
+    install_dependencies
+    print_separator
+    apt_clone_repository
+    run_services
+    open_ports $WG_WIREGUARD_PORT $WG_PORT
+    print_separator
     print_result
-    read -n1 -r -p "Press any key to continue..."
-    echo
+  }
+
+  if is_x86_64 ; then
+    install_sevices
+  elif is_aarch64 ; then
+    install_sevices
+  # elif is_arm ; then
+    #install_dependencies
+  else
+    die "Sorry, currently only 64-bit (x86_64, aarch64) Linux binary is available."
+  fi
 }
 
-simple_installation() {
-    echo "Simple installation"
-    general_pre_installation
+# Attempt to install on a Linux distribution
+do_distro() {
+  if ! has_perl; then
+    if ! try_install_pkgs perl; then
+      #TODO: remove dependence on 'perl', which is not installed by default
+      #on some distributions (Fedora and RHEL, in particular).
+      die "This script requires 'perl', please install it to continue."
+    fi
+  fi
 
-    get_wireguard_admin_name
-    get_wireguard_admin_password
+  IFS=";" read -r DISTRO VERSION <<GETDISTRO
+$(distro_info)
+GETDISTRO
 
-    get_wireguard_port
-    get_wireguard_admin_port
-   
-    set_default_values
+  if [ -n "$DISTRO" ] ; then
+    info "Detected Linux distribution: $DISTRO"
+    info ""
+  fi
 
-    general_post_installation
+  case "$DISTRO" in
+    ubuntu|linuxmint|elementary|neon|pop)
+      do_ubuntu_install "$VERSION"
+      ;;
+    debian|kali|raspbian|mx)
+      # do_debian_install "$VERSION"
+      ;;
+    fedora)
+      # do_fedora_install "$VERSION"
+      ;;
+    centos|rhel|redhatenterpriseserver)
+      # do_centos_install "$VERSION"
+      ;;
+    alpine)
+      # do_alpine_install "$VERSION"
+      ;;
+    *)
+      # do_sloppy_install
+  esac
 }
 
-advanced_installation() {
-    echo "Advanced installation"
-    general_pre_installation
+# Determine operating system and attempt to install.
+do_os() {
+  [ "$DEST" == "" ] && DEST=$DEFAULT_DEST
 
-    get_time_zone
-    set_timezone_host
-
-    get_local_subnet
-
-    get_pihole_password
-
-    get_wireguard_admin_name
-    get_wireguard_admin_password
-    get_wireguard_port
-    get_wireguard_admin_port
-    get_wireguard_client_subnet
-    get_wireguard_allowed_ips
-
-    general_post_installation
+  case "$(uname)" in
+    "Linux")
+      do_distro
+      ;;
+    # "Darwin")
+    #   do_osx_install
+    #   ;;
+    *)
+      die "Sorry, this installer does not support your operating system: $(uname)."
+  esac
 }
 
-clear
-echo 'Welcome to this Nika-VPN installer!'
-echo
-echo "Select an option:"
-echo "   1) Simple installation"
-echo "   2) Advanced Installation"
-echo "   3) Remove Nika-VPN"
-echo "   4) Exit"
-read -p "Option: " option
-until [[ "$option" =~ ^[1-4]$ ]]; do
-    echo "$option: invalid selection."
-    read -p "Option: " option
+
+has_nika_vpn() {
+  if ! has_sudo; then
+    die "This script requires 'sudo' installed."
+  fi
+  if has_docker && is_docker_active; then
+      local dockerps=$(sudo docker ps)
+      if echo $dockerps | grep -q 'unbound' || \
+         echo $dockerps | grep -q 'pihole' || \
+         echo $dockerps | grep -q 'wg-access-server'; then
+        return 0
+      else
+        return 1
+      fi
+  else
+    return 1
+  fi
+}
+
+get_nika_vpn_installed_path() {
+  local location=$(dirname $(sudo docker container inspect $1 --format '{{ index .Config.Labels "com.docker.compose.project.config_files" }}'))
+  if [ ! -d "$location" ]; then
+    die "Error getting Nika-VPN installation path"
+  fi
+  echo $location
+}
+
+check_nika_vpn_installed() {
+  if has_nika_vpn; then
+    info "Nika VPN is already installed."
+
+    if [ "$FORCE" = "true" ] ; then
+      info "Forcing reinstallation."
+      local location=$(get_nika_vpn_installed_path "wg-access-server")
+      # Close ports
+      local nika_vpn_env_file="$location/$NIKA_VPN_ENV_FILENAME"
+      local vpn_port=get_env_value "WG_WIREGUARD_PORT" $nika_vpn_env_file
+      local admin_port=get_env_value "WG_PORT" $nika_vpn_env_file
+      close_ports $vpn_port $admin_port
+      # Remove running containers
+      cd $location
+      sudo docker compose down -v
+      cd $(get_run_path)
+      # Remove installation folder
+      sudo rm -rf $location
+    else
+      die "Nika VPN is already installed. Run script with --force (or -f) option to reinstall."
+    fi
+  else
+    info "Nika VPN is not installed."
+  fi
+}
+
+validate_params() {
+  local subnet_prefix=$(get_subnet_prefix "$SERVICES_SUBNET")
+  local unbound_prefix=$(get_subnet_prefix "$UNBOUND_LOCAL_IP")
+  local pihole_prefix=$(get_subnet_prefix "$PI_HOLE_LOCAL_IP")
+  local wg_prefix=$(get_subnet_prefix "$WG_LOCAL_IP")
+  local wg_subnet_prefix=$(get_subnet_prefix "$WG_VPN_CIDR")
+
+  if [ "$subnet_prefix" != "$unbound_prefix" ]; then
+    die "The specified local address ${UNBOUND_LOCAL_IP} does not belong to the specified network ${SERVICES_SUBNET}"
+  fi
+
+  if [ "$subnet_prefix" != "$pihole_prefix" ]; then
+    die "The specified local address ${PI_HOLE_LOCAL_IP} does not belong to the specified network ${SERVICES_SUBNET}"
+  fi
+
+  if [ "$subnet_prefix" != "$wg_prefix" ]; then
+    die "The specified local address ${WG_LOCAL_IP} does not belong to the specified network ${SERVICES_SUBNET}"
+  fi
+
+  if [ "$subnet_prefix" == "$wg_subnet_prefix" ]; then
+    die "Subnet ranges for Nika-VPN services and VPN users must not match"
+  fi
+
+  if [ "$WG_PORT" == "$WG_WIREGUARD_PORT" ]; then
+    die "The port for connecting to the VPN and the port for administering the VPN must not be the same."
+  fi
+}
+
+can_install() {
+  if has_systemd_detect_virt; then
+    if [ "$( systemd-detect-virt )" == "openvz" ]; then
+        die "OpenVZ virtualization is not supported"
+    fi
+  fi
+}
+
+trap cleanup_temp_dir EXIT
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -q|--quiet)
+      # This tries its best to reduce output by suppressing the script's own
+      # messages and passing "quiet" arguments to tools that support them.
+      QUIET="true"
+      shift
+      ;;
+    -h|--help)
+      show_help
+      shift
+      ;;
+    -f|--force)
+      FORCE="true"
+      shift
+      ;;
+    -d|--dest)
+      DEST="$2"
+      shift 2
+      ;;
+    -tz|--time-zone)
+      if set_timezone "$2" ; then
+        shift 2
+      else
+        show_error_invalid_argument_value "$1" "$2"
+      fi
+      ;;
+    -ss|--services-subnet)
+      if set_service_subnet "$2" ; then
+        shift 2
+      else
+        show_error_invalid_argument_value "$1" "$2"
+      fi
+      ;;
+    -ul|--unbound-local-ip)
+      if set_unbound_local_ip "$2" ; then
+        shift 2
+      else
+        show_error_invalid_argument_value "$1" "$2"
+      fi
+      ;;
+    -pl|--pihole-local-ip)
+      if set_pihole_local_ip "$2" ; then
+        shift 2
+      else
+        show_error_invalid_argument_value "$1" "$2"
+      fi
+      ;;
+    -pp|--pihole-password)
+      PI_HOLE_PASSWORD="$2"
+      shift 2
+      ;;
+    -wl|--wg-local-ip)
+      if set_wg_local_ip "$2" ; then
+        shift 2
+      else
+        show_error_invalid_argument_value "$1" "$2"
+      fi
+      shift 2
+      ;;
+    -wpk|--wireguard-private-key)
+      WG_WIREGUARD_PRIVATE_KEY="$2"
+      shift 2
+      ;;
+    -au|--admin-username)
+      WG_ADMIN_USERNAME="$2"
+      shift 2
+      ;;
+    -apwd|--admin-password)
+      WG_ADMIN_PASSWORD="$2"
+      shift 2
+      ;;
+    -vp|--vpn-port)
+      if set_vpn_port $2 ; then
+        shift 2
+      else
+        show_error_invalid_argument_value "$1" "$2"
+      fi
+      shift 2
+      ;;
+    -ap|--admin-port)
+      if set_admin_port $2 ; then
+        shift 2
+      else
+        show_error_invalid_argument_value "$1" "$2"
+      fi
+      shift 2
+      ;;
+    -ll|--log-level)
+      if set_log_level $2 ; then
+        shift 2
+      else
+        show_error_invalid_argument_value "$1" "$2"
+      fi
+      shift 2
+      ;;
+    -ws|--wg-storage)
+      WG_STORAGE="$2"
+      shift 2
+      ;;
+    -dm|--disable-metadata)
+      WG_DISABLE_METADATA="true"
+      shift
+      ;;
+    -сf|--config-filename)
+      WG_FILENAME="$2"
+      shift 2
+      ;;
+    -wi|--wireguard-interface)
+      WG_WIREGUARD_INTERFACE="$2"
+      shift 2
+      ;;
+    -vc|--vpn-cidr)
+      if set_vpn_cidr "$2" ; then
+        shift 2
+      else
+        show_error_invalid_argument_value "$1" "$2"
+      fi
+      ;;
+    -vc6|--vpn-cidrv6)
+      WG_VPN_CIDRV6="$2"
+      shift 2
+      ;;
+    -nd|--nat-disabled)
+      WG_IPV4_NAT_ENABLED="false"
+      shift
+      ;;
+    -nd6|--nat-enable-v6)
+      WG_IPV6_NAT_ENABLED="true"
+      shift
+      ;;
+    -ai|--allowed-ips)
+      WG_VPN_ALLOWED_IPS="$2"
+      shift 2
+      ;;
+    -dnd|--dns-disabled)
+      WG_DNS_ENABLED="false"
+      shift
+      ;;
+    -dd|--dns-domain)
+      if set_dns_domain "$2" ; then
+        shift 2
+      else
+        show_error_invalid_argument_value "$1" "$2"
+      fi
+      ;;
+    -eh|--external-host)
+      if set_external_host "$2" ; then
+        shift 2
+      else
+        show_error_invalid_argument_value "$1" "$2"
+      fi
+      ;;
+    -ci|--client-isolation)
+      WG_VPN_CLIENT_ISOLATION="true"
+      shift
+      ;;
+    -nop|--not-open-ports)
+      IS_OPEN_PORTS="false"
+      shift
+      ;;
+    -aud|--auto-upgrade-disable)
+      IS_AUTO_UPGRADE="false"
+      shift
+      ;;
+    *)
+      echo "Invalid argument: $1" >&2
+      show_help
+      exit 1
+      ;;
+  esac
 done
 
-case "$option" in
-    1)
-        simple_installation
-        exit
-    ;;
-    2)
-        advanced_installation
-        exit
-    ;;
-    3)
-        echo
-        read -p "Confirm Nika-VPN removal? [y/N]: " remove
-        until [[ "$remove" =~ ^[yYnN]*$ ]]; do
-            echo "$remove: invalid selection."
-            read -p "Confirm Nika-VPN removal? [y/N]: " remove
-        done
-        if [[ "$remove" =~ ^[yY]$ ]]; then
-            remove_nika_vpn
-            echo
-            echo "Nika-VPN removed!"
-        else
-            echo
-            echo "Nika-VPN removal aborted!"
-        fi       
-        exit
-    ;;
-    4)
-        exit
-    ;;
-esac
+can_install
+validate_params
+check_nika_vpn_installed
+do_os

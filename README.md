@@ -16,17 +16,15 @@ This VPN service has been developed and tesed for Oracle Cloud Free Tier on conf
 
 ## Installation
 
-Run the script and follow the assistant:
+This script is meant for quick & easy install via:  
 
-`wget https://bit.ly/nika-vpn-install -O nika-vpn-install.sh && sudo bash nika-vpn-install.sh`
+`curl -sSL https://bit.ly/nika-vpn-install | sh`  
+or:  
+`wget -qO- https://bit.ly/nika-vpn-install | sh`  
 
-Once it ends, you need to go to [server_public_ip_address:vpn_control_panel_port] to create VPN users.
+Once it ends, you need to go to `[server_public_ip_address]:[vpn_control_panel_port]` to create VPN users.
 
 ## Screenshots
-
-### Installation completion screen
-
-![Installation completion screen](content/finish_install.png "Installation completion screen")
 
 ### Wireguard Access Portal
 
@@ -42,10 +40,6 @@ To check the correct installation and operation of Nika-VPN, use the services:
 
 - DNS leak test - [dnsleak.com](https://dnsleak.com/) or [ipleak.net](https://ipleak.net/)
 - Сheck ad blocking - [canyoublockit.com](https://canyoublockit.com)
-
-## Credits
-
-- [Nyr/wireguard-install](https://github.com/Nyr/wireguard-install) whose developments I used to create the installation script.
 
 ## TODO
 
