@@ -977,6 +977,7 @@ $(distro_info)
 GETDISTRO
 
   if [ -n "$DISTRO" ] ; then
+    info ""
     info "Detected Linux distribution: $DISTRO"
   fi
 

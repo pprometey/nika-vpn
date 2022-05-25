@@ -9,8 +9,6 @@ networks:
 volumes:
   wg-access-server-data:
     driver: local
-  wg-access-clien-data:
-    driver: local
   etc-pihole-data:
     driver: local
   etc-dnsmasq-data:
@@ -23,7 +21,7 @@ services:
     restart: unless-stopped
     hostname: "unbound"
     environment:
-      - TZ=${TIME_ZONE:-Etc/Utc}
+      - "TZ=${TIME_ZONE:-Etc/Utc}"
     volumes:
       - "./unbound:/opt/unbound/etc/unbound"
     networks:
@@ -40,14 +38,14 @@ services:
       - 127.0.0.1
       - ${UNBOUND_LOCAL_IP:-10.43.0.2} # Points to unbound
     environment:
-      TZ: ${TIME_ZONE:-Etc/Utc}
-      WEBPASSWORD: ${PI_HOLE_PASSWORD} # Blank password - Can be whatever you want.
-      ServerIP: ${PI_HOLE_LOCAL_IP:-10.43.0.3} # Internal IP of pihole
-      DNS1: ${UNBOUND_LOCAL_IP:-10.43.0.2} # Unbound IP
-      DNS2: ${UNBOUND_LOCAL_IP:-10.43.0.2} # If we don't specify two, it will auto pick google.
+      - "TZ=${TIME_ZONE:-Etc/Utc}"
+      - "WEBPASSWORD=${PI_HOLE_PASSWORD}" # Blank password - Can be whatever you want.
+      - "ServerIP=${PI_HOLE_LOCAL_IP:-10.43.0.3}" # Internal IP of pihole
+      - "DNS1=${UNBOUND_LOCAL_IP:-10.43.0.2}" # Unbound IP
+      - "DNS2=${UNBOUND_LOCAL_IP:-10.43.0.2}" # If we don't specify two, it will auto pick google.
     volumes:
-      - etc-pihole-data:/etc/pihole/
-      - etc-dnsmasq-data:/etc/dnsmasq.d/
+      - "etc-pihole-data:/etc/pihole/"
+      - "etc-dnsmasq-data:/etc/dnsmasq.d/"
     cap_add:
       - NET_ADMIN
     networks:
@@ -62,31 +60,30 @@ services:
     cap_add:
       - NET_ADMIN
     volumes:
-      - wg-access-server-data:/data
-      - wg-access-clien-data:/wireguard-clients
-      - /lib/modules:/lib/modules:ro
+      - "wg-access-server-data:/data"
+      - "/lib/modules:/lib/modules:ro"
     environment:
-      TZ: ${TIME_ZONE:-Etc/Utc}
-      WG_WIREGUARD_PRIVATE_KEY: ${WG_WIREGUARD_PRIVATE_KEY:?set the WG_WIREGUARD_PRIVATE_KEY environment variable}
-      WG_ADMIN_USERNAME: ${WG_ADMIN_USERNAME:-admin@vpn}
-      WG_ADMIN_PASSWORD: ${WG_ADMIN_PASSWORD:?set the WG_ADMIN_PASSWORD environment variable}
-      WG_WIREGUARD_PORT: ${WG_WIREGUARD_PORT:-51820}
-      WG_PORT: ${WG_PORT:-8000}
-      WG_LOG_LEVEL: ${WG_LOG_LEVEL:-info}
-      WG_STORAGE: ${WG_STORAGE:-sqlite3:///data/db.sqlite3}
-      WG_DISABLE_METADATA: ${WG_DISABLE_METADATA:-false}
-      WG_FILENAME: ${WG_FILENAME:-NikaVpnClient}
-      WG_WIREGUARD_INTERFACE: ${WG_WIREGUARD_INTERFACE:-wg0}
-      WG_VPN_CIDR: ${WG_VPN_CIDR:-10.254.253.0/24}
-      WG_VPN_CIDRV6: ${WG_VPN_CIDRV6:-0}
-      WG_IPV4_NAT_ENABLED: ${WG_IPV4_NAT_ENABLED:-true}
-      WG_IPV6_NAT_ENABLED: ${WG_IPV6_NAT_ENABLED:-false}
-      WG_VPN_ALLOWED_IPS: ${WG_VPN_ALLOWED_IPS:-0.0.0.0/0,::/0}
-      WG_DNS_ENABLED: ${WG_DNS_ENABLED:-true}
-      WG_DNS_UPSTREAM: ${PI_HOLE_LOCAL_IP:-10.43.0.3}
-      WG_DNS_DOMAIN: ${WG_DNS_DOMAIN}
-      WG_EXTERNAL_HOST: ${WG_EXTERNAL_HOST}
-      WG_VPN_CLIENT_ISOLATION: ${WG_VPN_CLIENT_ISOLATION:-false}
+      - "TZ=${TIME_ZONE:-Etc/Utc}"
+      - "WG_WIREGUARD_PRIVATE_KEY=${WG_WIREGUARD_PRIVATE_KEY:?set the WG_WIREGUARD_PRIVATE_KEY environment variable}"
+      - "WG_ADMIN_USERNAME=${WG_ADMIN_USERNAME:-admin@vpn}"
+      - "WG_ADMIN_PASSWORD=${WG_ADMIN_PASSWORD:?set the WG_ADMIN_PASSWORD environment variable}"
+      - "WG_WIREGUARD_PORT=${WG_WIREGUARD_PORT:-51820}"
+      - "WG_PORT=${WG_PORT:-8000}"
+      - "WG_LOG_LEVEL=${WG_LOG_LEVEL:-info}"
+      - "WG_STORAGE=${WG_STORAGE:-sqlite3:///data/db.sqlite3}"
+      - "WG_DISABLE_METADATA=${WG_DISABLE_METADATA:-false}"
+      - "WG_FILENAME=${WG_FILENAME:-NikaVpnClient}"
+      - "WG_WIREGUARD_INTERFACE=${WG_WIREGUARD_INTERFACE:-wg0}"
+      - "WG_VPN_CIDR=${WG_VPN_CIDR:-10.254.253.0/24}"
+      - "WG_VPN_CIDRV6=${WG_VPN_CIDRV6:-0}"
+      - "WG_IPV4_NAT_ENABLED=${WG_IPV4_NAT_ENABLED:-true}"
+      - "WG_IPV6_NAT_ENABLED=${WG_IPV6_NAT_ENABLED:-false}"
+      - "WG_VPN_ALLOWED_IPS=${WG_VPN_ALLOWED_IPS:-0.0.0.0/0,::/0}"
+      - "WG_DNS_ENABLED=${WG_DNS_ENABLED:-true}"
+      - "WG_DNS_UPSTREAM=${PI_HOLE_LOCAL_IP:-10.43.0.3}"
+      - "WG_DNS_DOMAIN=${WG_DNS_DOMAIN}"
+      - "WG_EXTERNAL_HOST=${WG_EXTERNAL_HOST}"
+      - "WG_VPN_CLIENT_ISOLATION=${WG_VPN_CLIENT_ISOLATION:-false}"
     ports:
       - "${WG_PORT:-8000}:${WG_PORT:-8000}/tcp"
       - "${WG_WIREGUARD_PORT:-51820}:${WG_WIREGUARD_PORT:-51820}/udp"

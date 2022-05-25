@@ -35,7 +35,7 @@ or:
 You can also see this information by running  
 `curl -sSL https://bit.ly/nika-vpn-install | sh -s - --help`  
 or  
-`wget -qO- https://bit.ly/nika-vpn-install | sh -s - -f`  
+`wget -qO- https://bit.ly/nika-vpn-install | sh -s - -h`  
 from the command line.
 
 ```
