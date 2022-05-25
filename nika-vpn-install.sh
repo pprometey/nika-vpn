@@ -11,6 +11,7 @@
 #
 # Arguments (use `... | sh -s - ARGUMENTS`)
 #
+# -h: Show help message.
 # -q: reduce script's output
 # -f: force over-write even if 'nika-vpn' already installed
 # -d DESTDIR: change destination directory
@@ -27,8 +28,6 @@ FORCE="" # -f|--force
 QUIET="" # -q|--quiet
 NIKA_VPN_TEMP_DIR=
 
-IS_OPEN_PORTS="true" # -nop|--not-open-ports
-
 TIME_ZONE="Etc/UTC" # -tz|--time-zone _
 SERVICES_SUBNET="10.43.0.0/24" # -ss|--services-subnet _
 UNBOUND_LOCAL_IP="10.43.0.2" # -ul|--unbound-local-ip _
@@ -36,25 +35,27 @@ PI_HOLE_LOCAL_IP="10.43.0.3" # -pl|--pihole-local-ip _
 PI_HOLE_PASSWORD= # -pp|--pihole-password _
 
 WG_LOCAL_IP="10.43.0.4" # -wl|--wg-local-ip _
-WG_WIREGUARD_PRIVATE_KEY= # -wpk|--wireguard-private-key _
+WG_WIREGUARD_PRIVATE_KEY= # -wpk|--wg-private-key _
 WG_ADMIN_USERNAME="admin@vpn" # -au|--admin-username _
-WG_ADMIN_PASSWORD= # -apwd|--admin-password _
-WG_WIREGUARD_PORT="51820" # -vp|--vpn-port _
-WG_PORT="8000" # -ap|--admin-port _
+WG_ADMIN_PASSWORD= # -ap|--admin-password _
+WG_WIREGUARD_PORT="51820" # -pv|--port-vpn _
+WG_PORT="8000" # -pa|--port-admin _
 WG_LOG_LEVEL="info" # -ll|--log-level _
 WG_STORAGE="sqlite3:///data/db.sqlite3" # -ws|--wg-storage _
 WG_DISABLE_METADATA="false" # -dm|--disable-metadata
 WG_FILENAME="NikaVpnClient" # -сf|--config-filename _
-WG_WIREGUARD_INTERFACE="wg0" # -wi|--wireguard-interface _
+WG_WIREGUARD_INTERFACE="wg0" # -wi|--wg-interface _
 WG_VPN_CIDR="10.44.0.0/24" # -vc|--vpn-cidr
 WG_VPN_CIDRV6="0" # -vc6|--vpn-cidrv6 _
 WG_IPV4_NAT_ENABLED="true" # -nd|--nat-disabled
 WG_IPV6_NAT_ENABLED="false" # -ne6|--nat-enable-v6
 WG_VPN_ALLOWED_IPS="0.0.0.0/0,::/0" # -ai|--allowed-ips _
-WG_DNS_ENABLED="true" # -dnd|--dns-disabled
-WG_DNS_DOMAIN="" # -dd|--dns-domain _
+WG_DNS_ENABLED="true" # -dd|--dns-disabled
+WG_DNS_DOMAIN="" # -dn|--dns-domain _
 WG_EXTERNAL_HOST="" # -eh|--external-host _
 WG_VPN_CLIENT_ISOLATION="false" # -ci|--client-isolation
+
+WITH_FIREWALL="true" # -wf|--without_firewall
 # -------------------------------------------------------------------------------
 
 # print a message to stdout unless '-q' passed to script
@@ -229,7 +230,97 @@ has_dialog() {
 # -------------------------------------------------------------------------------
 
 show_help() {
-  echo "the help"
+  nika_vpn_help_file=${NIKA_VPN_TEMP_DIR}/.nika_vpn_help
+cat << EOF > $nika_vpn_help_file
+Installing a personal private VPN server with ad blocker
+
+Usage:
+  nika-vpn-install.sh [-d <arg>...] [-q] [--logLevel <level>...] [options]
+  nika-vpn-install.sh -h|--help
+
+Options:
+  -h, --help
+        Display this help and exit
+  -q, --quiet
+        This tries its best to reduce output by suppressing the script's own
+        messages and passing "quiet" arguments to tools that support them
+  -f, --force
+        Reinstalling the Nika-VPN service if it is already installed
+  -d, --dest DEST
+        Nika-VPn installation directory, default '\${HOME}/nika-vpn'
+  -tz, --time-zone TIME_ZONE
+        Setting the time zone for Nika-VPN modules, by default 'Etc/UTC'
+  -ss, --services-subnet SERVICES_SUBNET
+        The IPv4 network range for Nika-VPN modules, default '10.43.0.0/24'
+  -ul, --unbound-local-ip UNBOUND_LOCAL_IP
+        IPv4 local address of the Unbound server DNS module, default '10.43.0.2'
+
+  -pl, --pihole-local-ip PI_HOLE_LOCAL_IP
+        IPv4 local address of the Pi-Hole ad blocker module, default '10.43.0.3'
+  -pp, --pihole-password PI_HOLE_PASSWORD
+        Password to access the Pi-Hole ad blocker control panel
+
+  -wl, --wg-local-ip WG_LOCAL_IP
+        IPv4 local address of wg-access-server VPN server module,
+        default '10.43.0.4'
+  -wpk, --wg-private-key WG_WIREGUARD_PRIVATE_KEY
+        The wireguard private key. This value is required and must be stable.
+        If this value changes all devices must re-register. If not defined,
+        generated automatically.
+  -au, --admin-username WG_ADMIN_USERNAME
+        The admin account username for wg-access-server, default 'admin@vpn'
+  -ap, --admin-password WG_ADMIN_PASSWORD
+        The admin account password for wg-access-server.If not defined,
+        generated automatically
+  -pv, --port-vpn WG_WIREGUARD_PORT
+        Wireguard server port (udp), for connecting VPN clients, default '51820'
+  -pa, --port-admin WG_PORT
+        Web interface port for administration VPN server wg-access-server (http)
+        default '8000'
+  -ll, --log-level WG_LOG_LEVEL
+        The global log level for wg-access-server, possible values
+        (trace|debug|info|error|fatal), default 'info'
+  -ws, --wg-storage WG_STORAGE
+        A storage backend connection string for wg-access-server,
+        default 'sqlite3:///data/db.sqlite3'
+  -dm, --disable-metadata
+        Turn off collection of device metadata logging for wg-access-server.
+        Includes last handshake time and RX/TX bytes only.
+  -сf, --config-filename
+        Change the name of the configuration file the user can download
+        (do not include the '.conf' extension ), default 'NikaVpnClient'
+  -wi, --wg-interface
+        The wireguard network interface name, default 'wg0'
+  -vc, --vpn-cidr WG_VPN_CIDR
+        The VPN IPv4 network range. VPN clients will be assigned IP addresses
+        in this range. Set to 0 to disable IPv4. Default '10.44.0.0/24'
+  -vc6, --vpn-cidrv6
+        The VPN IPv6 network range. VPN clients will be assigned IP addresses
+        in this range. Set to 0 to disable IPv6. Defalt '0'
+  -nd, --nat-disabled
+        Disables NAT for IPv4 for wg-access-server
+  -ne6, --nat-enable-v6
+        Enable NAT for IPv6 for wg-access-server
+  -ai, --allowed-ips
+        Allowed IPs that clients may route through this VPN. This will be set
+        in the client's WireGuard connection file and routing is also enforced
+        by the server using iptables. Default '0.0.0.0/0,::/0'
+  -dd, --dns-disabled
+        Enable/disable the embedded DNS proxy server. This is enabled by default
+        and allows VPN clients to avoid DNS leaks by sending all DNS requests to
+        wg-access-server itself.
+  -dn, --dns-domain WG_DNS_DOMAIN
+        A domain to serve configured devices authoritatively. Queries for names
+        in the format .. will be answered with the device's IP addresses.
+  -eh, --external-host WG_EXTERNAL_HOST
+        The external domain for the server (e.g. vpn.example.com)
+  -ci, --client-isolation
+        BLock or allow traffic between client devices (client isolation)
+  -wf, --without_firewall
+        Without installing 'firewalld' and opening ports
+EOF
+
+cat $nika_vpn_help_file | more
 }
 
 show_error_invalid_argument_value() {
@@ -593,7 +684,7 @@ cat $nika_vpn_info_file
 }
 
 open_ports() {
-  if [ $IS_OPEN_PORTS = "true" ]; then
+  if [ $WITH_FIREWALL = "true" ]; then
 
     if ! sudocmd "open udp port $1" firewall-cmd --permanent --zone=public --add-port=$1/udp ${QUIET:+-q}; then
       die "\nOpening port failed. Please run 'sudo firewall-cmd --permanent --zone=public --add-port=$1/udp' and try again."
@@ -788,7 +879,7 @@ apt_firewalld_install() {
     fi
   }
 
-  if [ $IS_OPEN_PORTS = "true" ]; then
+  if [ $WITH_FIREWALL = "true" ]; then
     if ! has_firewalld; then
       info ""
       info "Installing firewalld..."
@@ -836,7 +927,7 @@ apt_install_dependencies() {
       apt_update_packges_info
       apt_get_install_pkgs dialog
       apt_upgrade
-      apt_get_install_pkgs ca-certificates curl gnupg lsb-release git unzip
+      apt_get_install_pkgs ca-certificates curl gnupg lsb-release git unzip nano screen
     fi
 }
 
@@ -1028,16 +1119,17 @@ trap cleanup_temp_dir EXIT
 
 make_temp_dir
 
+if echo $@ | grep -qw -e "\-\-help" -e "\-h"; then
+  show_help
+  exit 0
+fi
+
 while [ $# -gt 0 ]; do
   case "$1" in
     -q|--quiet)
       # This tries its best to reduce output by suppressing the script's own
       # messages and passing "quiet" arguments to tools that support them.
       QUIET="true"
-      shift
-      ;;
-    -h|--help)
-      show_help
       shift
       ;;
     -f|--force)
@@ -1087,7 +1179,7 @@ while [ $# -gt 0 ]; do
         show_error_invalid_argument_value "$1" "$2"
       fi
       ;;
-    -wpk|--wireguard-private-key)
+    -wpk|--wg-private-key)
       WG_WIREGUARD_PRIVATE_KEY="$2"
       shift 2
       ;;
@@ -1095,18 +1187,18 @@ while [ $# -gt 0 ]; do
       WG_ADMIN_USERNAME="$2"
       shift 2
       ;;
-    -apwd|--admin-password)
+    -ap|--admin-password)
       WG_ADMIN_PASSWORD="$2"
       shift 2
       ;;
-    -vp|--vpn-port)
+    -pv|--port-vpn)
       if set_vpn_port $2 ; then
         shift 2
       else
         show_error_invalid_argument_value "$1" "$2"
       fi
       ;;
-    -ap|--admin-port)
+    -pa|--port-admin)
       if set_admin_port $2 ; then
         shift 2
       else
@@ -1132,7 +1224,7 @@ while [ $# -gt 0 ]; do
       WG_FILENAME="$2"
       shift 2
       ;;
-    -wi|--wireguard-interface)
+    -wi|--wg-interface)
       WG_WIREGUARD_INTERFACE="$2"
       shift 2
       ;;
@@ -1159,11 +1251,11 @@ while [ $# -gt 0 ]; do
       WG_VPN_ALLOWED_IPS="$2"
       shift 2
       ;;
-    -dnd|--dns-disabled)
+    -dd|--dns-disabled)
       WG_DNS_ENABLED="false"
       shift
       ;;
-    -dd|--dns-domain)
+    -dn|--dns-domain)
       if set_dns_domain "$2" ; then
         shift 2
       else
@@ -1181,13 +1273,13 @@ while [ $# -gt 0 ]; do
       WG_VPN_CLIENT_ISOLATION="true"
       shift
       ;;
-    -nop|--not-open-ports)
-      IS_OPEN_PORTS="false"
+    --wf|--without_firewall)
+      WITH_FIREWALL="false"
       shift
       ;;
     *)
       echo "Invalid argument: $1" >&2
-      show_help
+      echo "Run '$0 --help' for more information." >&2
       exit 1
       ;;
   esac
