@@ -1109,7 +1109,7 @@ do_apt_install() {
     print_result
   }
 
-  if is_x86_64 && is_aarch64 ; then
+  if is_x86_64 || is_aarch64 ; then
     install_sevices
   # elif is_arm ; then
     #install_dependencies
