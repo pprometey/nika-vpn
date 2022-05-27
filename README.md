@@ -1,11 +1,12 @@
 # Nika-VPN
 
-It is an easy to deploy and use private VPN server with ad blocker.
+It is an easy to deploy and use private VPN server with ad blocker and tunneling VPN traffic through via websocket.
 
-This VPN service based on Wirehole + wg-access-server and provides a convenient and friendly installer.
+This VPN service based on Wirehole + wg-access-server + wstunnel and provides a convenient and friendly installer.
 
 1. [Wirehole](https://github.com/IAmStoxe/wirehole) - WireHole is a combination of WireGuard, Pi-hole, and Unbound in a docker-compose project with the intent of enabling users to quickly and easily create a personally managed full or split-tunnel WireGuard VPN with ad blocking capabilities thanks to Pi-hole, and DNS caching, additional privacy options, and upstream providers via Unbound.
 2. [wg-access-server](https://github.com/freifunkMUC/wg-access-server) - An all-in-one WireGuard VPN solution with a web ui for connecting devices.
+3. [wstunnel](https://github.com/erebe/wstunnel) - This tool uses the websocket protocol which is compatible with http in order to bypass firewalls and proxies. Wstunnel allows you to tunnel what ever traffic you want.
 
 Winguard from Wirehole replaced with wg-access-server.
 
@@ -38,7 +39,7 @@ or
 `wget -qO- https://bit.ly/nika-vpn-install | sh -s - -h`  
 from the command line.
 
-```
+```text
 Installing a personal private VPN server with ad blocker
 
 Usage:
@@ -146,5 +147,5 @@ To check the correct installation and operation of Nika-VPN, use the services:
 
 ## TODO
 
-- [ ] Obfuscate VPN traffic with Shadowsocks or WebSocket Tunneling
+- [x] Obfuscate VPN traffic with Shadowsocks or WebSocket Tunneling
 - [ ] Secure traffic via tls (https) and use ODIC authorization for Wireguard Access Server using Traefik and Authelia
