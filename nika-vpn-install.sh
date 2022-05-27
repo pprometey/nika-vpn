@@ -1105,6 +1105,7 @@ do_apt_install() {
     run_services
     print_separator
     apt_open_ports
+    create_wstunnel_service
     print_separator
     print_result
   }
