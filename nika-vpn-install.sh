@@ -772,10 +772,9 @@ delete_wstunnel_service() {
 
   if systemctl list-unit-files | grep -q "$WSTUNNEL_SERVICE" ; then
     if ! sudocmd "delete wstunnel unit file" rm /etc/systemd/system/$WSTUNNEL_SERVICE; then
-    die "Failed to delete wstunnel unit file"
+      die "Failed to delete wstunnel unit file"
     fi
   fi
-
 }
 
 apt_open_ports() {
@@ -929,9 +928,9 @@ apt_install_wstunnel() {
           if ! sudocmd "set privileges for wstunnel" setcap CAP_NET_BIND_SERVICE=+eip /usr/local/bin/wstunnel; then
             die "Failed to set privileges for wstunnel"
           fi
+        }
 
         add_wstunnel_command_x64() {
-        }
           download_wstunnel $1
           add_wstunnel_command "$1"
         }
