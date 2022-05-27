@@ -787,7 +787,7 @@ apt_open_ports() {
       die "\nOpening port for VPN administration failed."
     fi
 
-    if [ "WSTUNNEL_ENABLED" = "true" ] ; then
+    if [ "$WSTUNNEL_ENABLED" = "true" ] ; then
       if ! sudocmd "open tcp port $WSTUNEL_WS_PORT" firewall-cmd --permanent --zone=public --add-port=$WG_PORT/tcp ${QUIET:+-q}; then
         die "\nOpening port for tunneling via web-socket failed."
       fi
