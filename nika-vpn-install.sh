@@ -763,15 +763,16 @@ delete_wstunnel_service() {
       die "Failed to stop wstunnel service"
     fi
   fi
+
   if systemctl is-enabled $WSTUNNEL_SERVICE | grep -q "enabled" ; then
     if ! sudocmd "disable wstunnel service" systemctl disable $WSTUNNEL_SERVICE; then
       die "Failed to disable wstunnel service"
     fi
   fi
 
-    if systemctl list-unit-files | grep -q "$WSTUNNEL_SERVICE" ; then
+  if systemctl list-unit-files | grep -q "$WSTUNNEL_SERVICE" ; then
     if ! sudocmd "delete wstunnel unit file" rm /etc/systemd/system/$WSTUNNEL_SERVICE; then
-      die "Failed to delete wstunnel unit file"
+    die "Failed to delete wstunnel unit file"
     fi
   fi
 
@@ -808,7 +809,7 @@ apt_close_ports() {
     die "\nClosing port failed. Please run 'sudo firewall-cmd --permanent --zone=public --add-port=$2/tcp' and try again."
   fi
 
-  if [ -n "$3" ]
+  if [ -n "$3" ]; then
     if ! sudocmd "close tcp port $3" firewall-cmd --permanent --zone=public --remove-port=$3/tcp ${QUIET:+-q}; then
       die "\nClosing port failed. Please run 'sudo firewall-cmd --permanent --zone=public --add-port=$3/tcp' and try again."
     fi
@@ -820,7 +821,7 @@ apt_close_ports() {
 }
 
 set_blank_dest() {
-    [ "$DEST" = "" ] && DEST=$DEFAULT_DEST
+    [ "${DEST}" = "" ] && DEST=$DEFAULT_DEST
 }
 
 apt_clone_repository() {
