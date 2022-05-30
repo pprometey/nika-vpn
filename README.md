@@ -15,9 +15,7 @@ This VPN service has been developed and tesed for Oracle Cloud Free Tier on conf
 - Canonical-Ubuntu-20.04-Minimal, VM.Standard.E2.1.Micro (amd64)
 - Canonical-Ubuntu-20.04, VM.Standard.A1.Flex (aarch64)
 
-## Installation
-
-### Server side installation
+## Server side installation
 
 This script is meant for quick & easy install via:  
 
@@ -33,7 +31,7 @@ To reinstall, or specify additional script execution arguments, you need to add 
 or:  
 `wget -qO- https://bit.ly/nika-vpn-install | sh -s - -f` 
 
-#### Nika-VPN Server Installer CLI Overview
+### Nika-VPN Server Installer CLI Overview
 
 You can also see this information by running  
 `curl -sSL https://bit.ly/nika-vpn-install | sh -s - --help`  
@@ -135,20 +133,20 @@ Options:
         Without installing and opening a websocket tunnel
 ```
 
-#### Screenshots
+### Screenshots
 
-##### Wireguard Access Portal
+#### Wireguard Access Portal
 
 ![Wireguard Access Porta](content/wg-access-server.png "Wireguard Access Porta")
 
-##### Pi-hole dashboard
+#### Pi-hole dashboard
 
 ![Pi-hole dashboard](content/pi-hole.png "Pi-hole dashboard")
 
     
-### Client side installation
+## Client side installation
 
-#### Installing and configuring the client for Windows
+### Installing and configuring the client for Windows
 
 To install and configure the client side, first download and install the [Wireguard client for Windows](https://www.wireguard.com/install/)
 In the Wireguard client, import the configuration file that you received earlier through the Wireguard Access Portal
@@ -160,12 +158,32 @@ In order to make your VPN tunnel very difficult to block, you need to configure 
 To do this, run the configuration script for the client part of tunneling through websockets.
 First, launch a PowerShell terminal as an administrator and run a command that will download and run the script:    
 `(new-object net.webclient).DownloadFile('https://bit.ly/nika-vpn-install-client-windows','install.ps1'); ./install.ps1`  
-
 During the execution of the script, you will be asked for the public IP address of your VPN server.  
+
 You can specify it right away when you run the script (replace the address '10.10.10.10' with the address of your server)  
 `(new-object net.webclient).DownloadFile('https://bit.ly/nika-vpn-install-client-windows','install.ps1'); ./install.ps1 10.10.10.10`  
 
-##### Nika-VPN Windows Client Installer CLI Overview
+After the successful execution of the script, an instruction will be displayed with further actions.
+
+It will be necessary through the Wireguard client interface to manually edit the VPN tunnel configuration file with the values ​​specified in the instructions.  
+An example VPN tunnel configuration file:
+```text
+[Interface]
+PrivateKey = <censored>
+Address = 10.44.0.2/32
+DNS = 10.44.0.1
+PreUp = powershell.exe -File "c:\Users\<censored>\.wireguard\wstunnel.ps1" -PreUp
+PostUp = powershell.exe -File "c:\Users\<censored>\.wireguard\wstunnel.ps1" -PostUp
+PreDown = powershell.exe -File "c:\Users\<censored>\.wireguard\wstunnel.ps1" -PreDown
+Table = off
+
+[Peer]
+PublicKey = <censored>
+AllowedIPs = 0.0.0.0/0, ::/0, 10.44.0.1/32
+Endpoint = 127.0.0.1:9999
+```
+
+### Nika-VPN Windows Client Installer CLI Overview
 
 You can set other parameters of the websocket tunnel configuration script.
 
