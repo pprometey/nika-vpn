@@ -413,7 +413,7 @@ set_timezone() {
 
 validate_port() {
  if echo "$1" | grep -Eq '^[0-9]{1,5}$'; then
-     if [ $1 -gt 0 ] && [ $1 -lt 65535 ] ; then
+     if [ $1 -gt 1 ] && [ $1 -lt 65535 ] ; then
        return 0
      else
        return 1
