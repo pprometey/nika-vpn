@@ -158,10 +158,11 @@ After that, you can already establish a VPN connection, but it will not be obfus
 In order to make your VPN tunnel very difficult to block, you need to configure traffic tunneling through websockets.
 
 To do this, run the configuration script for the client part of tunneling through websockets.
-First, launch a PowerShell terminal as an administrator and run a command that will download and run the script:  
-`(new-object net.webclient).DownloadFile('https://bit.ly/nika-vpn-install-client-windows','install.ps1'); ./install.ps1`
-During the execution of the script, you will be asked for the public IP address of your VPN server.
-You can specify it right away when you run the script (replace the address '10.10.10.10' with the address of your server) 
+First, launch a PowerShell terminal as an administrator and run a command that will download and run the script:    
+`(new-object net.webclient).DownloadFile('https://bit.ly/nika-vpn-install-client-windows','install.ps1'); ./install.ps1`  
+
+During the execution of the script, you will be asked for the public IP address of your VPN server.  
+You can specify it right away when you run the script (replace the address '10.10.10.10' with the address of your server)  
 `(new-object net.webclient).DownloadFile('https://bit.ly/nika-vpn-install-client-windows','install.ps1'); ./install.ps1 10.10.10.10`  
 
 ##### Nika-VPN Windows Client Installer CLI Overview
