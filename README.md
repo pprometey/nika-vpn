@@ -17,6 +17,8 @@ This VPN service has been developed and tesed for Oracle Cloud Free Tier on conf
 
 ## Installation
 
+### Server side installation
+
 This script is meant for quick & easy install via:  
 
 `curl -sSL https://bit.ly/nika-vpn-install | sh`  
@@ -31,7 +33,7 @@ To reinstall, or specify additional script execution arguments, you need to add 
 or:  
 `wget -qO- https://bit.ly/nika-vpn-install | sh -s - -f` 
 
-## Nika-VPN Installer CLI Overview
+#### Nika-VPN Server Installer CLI Overview
 
 You can also see this information by running  
 `curl -sSL https://bit.ly/nika-vpn-install | sh -s - --help`  
@@ -125,18 +127,79 @@ Options:
   -ci, --client-isolation
         BLock or allow traffic between client devices (client isolation)
   -wf, --without_firewall
-        Without installing 'firewalld' and opening ports                       
+        Without installing 'firewalld' and opening ports
+  -pw|--port-web-socket WSTUNEL_WS_PORT
+        Port on which the websocket tunnel is open and listening. 
+        Default by '443'
+  -wd|--web-socket-disabled 
+        Without installing and opening a websocket tunnel
 ```
 
-## Screenshots
+#### Screenshots
 
-### Wireguard Access Portal
+##### Wireguard Access Portal
 
 ![Wireguard Access Porta](content/wg-access-server.png "Wireguard Access Porta")
 
-### Pi-hole dashboard
+##### Pi-hole dashboard
 
 ![Pi-hole dashboard](content/pi-hole.png "Pi-hole dashboard")
+
+    
+### Client side installation
+
+#### Installing and configuring the client for Windows
+
+To install and configure the client side, first download and install the [Wireguard client for Windows](https://www.wireguard.com/install/)
+In the Wireguard client, import the configuration file that you received earlier through the Wireguard Access Portal
+
+After that, you can already establish a VPN connection, but it will not be obfuscated, and it can be blocked quite easily if you are in the territory of any authoritarian/totalitarian state.
+
+In order to make your VPN tunnel very difficult to block, you need to configure traffic tunneling through websockets.
+
+To do this, run the configuration script for the client part of tunneling through websockets.
+First, launch a PowerShell terminal as an administrator and run a command that will download and run the script:  
+`(new-object net.webclient).DownloadFile('https://bit.ly/nika-vpn-install-client-windows','install.ps1'); ./install.ps1`
+During the execution of the script, you will be asked for the public IP address of your VPN server.
+You can specify it right away when you run the script (replace the address '10.10.10.10' with the address of your server) 
+`(new-object net.webclient).DownloadFile('https://bit.ly/nika-vpn-install-client-windows','install.ps1'); ./install.ps1 10.10.10.10`  
+
+##### Nika-VPN Windows Client Installer CLI Overview
+
+You can set other parameters of the websocket tunnel configuration script.
+
+```text
+Script for setting up the client part of tunneling via websockets for Windows
+
+Usage:
+  install-windows-client.ps1 [VpnHost] [VpnPort] [-LocalPort <port>...] [options]
+
+Options:
+  -VpnHost "<VpnHost>"
+        Public IPv4 address of the VPN server, required. Can be set 
+        without using the -VpnHost key if you specify its value as the 
+        first parameter
+  -VpnPort <VpnPort>
+        Wireguard server port (udp), for connecting VPN clients. 
+        Default by '51820'. Can be set without using the -VpnHost key if you 
+        specify its value as the second parameter
+  -TunnelPort <TunnelPort>
+        Server port on which the websocket tunnel is open and listening. 
+        Default by '443'
+  -LocalPort <LocalPort>
+        The port on the client's local machine on which the web socket tunnel is 
+        open and listening. Default '9999'
+  -Timeout <Timeout>
+        UDP forward timeout in seconds after which the connection is closed, 
+        by default -1 (no timeout)
+  -VpnDns "<VpnDns>"
+        Local IP address of the docker container where the PI-Hole ad blocker 
+        service is deployed. By default '10.43.0.3'
+  -DestanationDir "<DestanationDir>"
+        Path to install additional files required to install websockets tunnel. 
+        Default by '${HOME}\.wireguard'
+
+```
 
 ## Health check
 

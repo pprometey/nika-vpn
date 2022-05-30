@@ -28,12 +28,12 @@
     [string]
     $DestanationDir="${HOME}\.wireguard",
     [Parameter(Mandatory=$False,
-      HelpMessage='Remote tunnel port, by default [443]')]
+      HelpMessage='Remote websocket tunnel port, by default [443]')]
     [int32]
     [ValidateRange(0,65000)]
     $TunnelPort=443,
     [Parameter(Mandatory=$False,
-      HelpMessage='Tunnel local port, by default [9999]')]
+      HelpMessage='Websocket tunnel local port, by default [9999]')]
     [int32]
     [ValidateRange(0,65000)]
     $LocalPort=9999,

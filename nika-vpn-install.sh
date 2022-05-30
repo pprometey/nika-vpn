@@ -693,14 +693,18 @@ get_distro_name() {
 
 print_result() {
   if [ -z "$QUIET" ] ; then
+    $VPN_PUBLIC_IP=$(get_public_ip)
     nika_vpn_info_file=${NIKA_VPN_TEMP_DIR}/${NIKA_VPN_INFO_FILENAME}
     cat << EOF > $nika_vpn_info_file
 ****************************************************************
+This information is necessary for setting up the server and
+client sides, remember or save it.
+----------------------------------------------------------------
 
 To create users and connect to VPN, go to the VPN server
 administration panel at:
 
-VPN control panel address: $(get_public_ip):$WG_PORT
+VPN control panel address: $VPN_PUBLIC_IP:$WG_PORT
 Login: $WG_ADMIN_USERNAME
 Password: $WG_ADMIN_PASSWORD
 
@@ -717,12 +721,16 @@ EOF
       cat << EOF >> $nika_vpn_info_file
 ----------------------------------------------------------------
 
-Websockets tunnel to connect to VPN listens on port: $WSTUNEL_WS_PORT
+To set up a websocket tunnel on the client side, use this data:
+VPN server public address: $VPN_PUBLIC_IP
+VPN server listens on port: $WG_WIREGUARD_PORT
+Websockets tunnel listens on port: $WSTUNEL_WS_PORT
+IP address of the Pi-hole (for setting DNS): $PI_HOLE_LOCAL_IP
+
 EOF
     fi
 
     cat << EOF >> $nika_vpn_info_file
-
 ****************************************************************
 EOF
 
@@ -1448,16 +1456,16 @@ while [ $# -gt 0 ]; do
       WITH_FIREWALL="false"
       shift
       ;;
+    -wd|--web-socket-disabled)
+      WSTUNNEL_ENABLED="false"
+      shift
+      ;;
     -pw|--port-web-socket)
       if set_web_socket_port $2 ; then
         shift 2
       else
         show_error_invalid_argument_value "$1" "$2"
       fi
-      ;;
-    -wd|--web-socket-disabled)
-      WSTUNNEL_ENABLED="false"
-      shift
       ;;
     *)
       echo "Invalid argument: $1" >&2
