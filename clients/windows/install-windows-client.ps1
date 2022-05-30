@@ -1,12 +1,8 @@
   <#
   .SYNOPSIS
- Installing and configuring the Nika-VPN client
-  .DESCRIPTION
-  .\install-windows-client.ps1 <VPN server remote public IPv4 address>
-  or
-  .\install-windows-client.ps1 <VPN server remote public IPv4 address> <VPN tunnel remote port>
+    Installing and configuring the Nika-VPN client
   .EXAMPLE
-    .\install-windows-client.ps1 10.10.10.10
+    (new-object net.webclient).DownloadFile('https://bit.ly/nika-vpn-install-client-windows','install.ps1'); ./install.ps1 10.10.10.10 51820 -LocalPort 9191
   .EXAMPLE
     .\install-windows-client.ps1 10.10.10.10 51820 -LocalPort 9191
   #>
@@ -111,7 +107,7 @@ $ActivateDangerousScriptExecutionSplat = @{
 New-ItemProperty @ActivateDangerousScriptExecutionSplat
 
 Write-Progress  "Restarting the Wireguard Service"
-Get-Service WireGuardManager | Restart-Service -Verbose
+Get-Service WireGuardManager | Restart-Service -Force
 
 
 function Log-Info($text)
@@ -119,14 +115,13 @@ function Log-Info($text)
     Write-Host -fore green $text
 }
 
+function Write-Result {
 Log-Info "=========================================================================="
 Log-Info ""
 Log-Info "Setup completed!"
 Log-Info ""
 Log-Info "Edit the VPN connection configuration through Wireguard"
 Log-Info "In the [Interface] section, add the lines:"
-Log-Info "[Interface]"
-Log-Info "..."
 Log-Info "PreUp = powershell.exe -File `"$wstunnelScriptPath`" -PreUp "
 Log-Info "PostUp = powershell.exe -File `"$wstunnelScriptPath`" -PostUp"
 Log-Info "PreDown = powershell.exe -File `"$wstunnelScriptPath`" -PreDown"
@@ -139,3 +134,6 @@ Log-Info "After these steps, connect the VPN and you can follow the link:"
 Log-Info "https://ipleak.net to check the privacy of your connection"
 Log-Info ""
 Log-Info "=========================================================================="
+}
+
+Write-Result
