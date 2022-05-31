@@ -16,7 +16,7 @@
 # -f: force over-write even if 'nika-vpn' already installed
 # -d DESTDIR: change destination directory
 #
-# Copyright (c) 2018 Alexei Chernyavski. Released under the MIT License.priva
+# Copyright (c) 2018 Alexei Chernyavski. Released under the MIT License
 
 REPO_URL="https://github.com/pprometey/nika-vpn.git"
 PROJECT_NAME="nika-vpn"
@@ -211,10 +211,6 @@ has_firewalld() {
 
 has_systemd_detect_virt() {
   has_cmd systemd-detect-virt
-}
-
-has_unattended_upgrades() {
-  has_cmd unattended-upgrades
 }
 
 has_dialog() {
